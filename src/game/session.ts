@@ -51,6 +51,11 @@ export class ThrowSession {
     }
   }
 
+  /** Would this shoe be foul if judged now? (No side effects.) */
+  isFoulNow(shoe: ShoeSim): boolean {
+    return this.fouls.has(shoe) || !this.sim.shoes.includes(shoe) || this.sim.isFoul(shoe);
+  }
+
   /** Measure a shoe where it lies, without judging it (no side effects). */
   measure(shoe: ShoeSim): ShoeMeasure {
     return this.sim.shoes.includes(shoe) ? measureShoe(this.sim.pose(shoe), shoe.target) : FOUL_MEASURE;

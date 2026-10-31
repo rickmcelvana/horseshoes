@@ -60,32 +60,42 @@ for (const [name, viewport] of [
   await pitch(page, viewport).catch(() => errors.push(`${name}: no practice result`));
   console.log(name, 'practice:', await page.locator('#toast .title').textContent());
 
-  // Match setup.
+  // Match setup: a friend on desktop (hot-seat), Uncle Dale on the phone (computer opponent).
+  const vsComputer = name === 'phone';
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: 'Play a match' }).click();
   await page.getByLabel('Player 1 name').fill('Rick');
-  await page.getByLabel('Player 2 name').fill('Dale');
-  await page.screenshot({ path: `${out}/${name}-2-setup.png` });
+  if (vsComputer) await page.locator('button[data-opponent="dale"]').click();
+  else await page.getByLabel('Player 2 name').fill('Dale');
+  await page.screenshot({ path: `${out}/${name}-2-setup.png`, timeout: 120000 });
   await page.getByRole('button', { name: 'Toss for first pitch' }).click();
   await page.waitForTimeout(400);
-  await page.screenshot({ path: `${out}/${name}-3-toss.png` });
+  await page.screenshot({ path: `${out}/${name}-3-toss.png`, timeout: 120000 });
   await page.locator('#overlay button.primary').click();
 
-  // One full inning: four shoes, with handoffs.
-  for (let shoe = 0; shoe < 4; shoe++) {
+  // One full inning: four shoes, with handoffs. The computer takes its own turns.
+  let handoffShot = false;
+  let pitched = 0;
+  const deadline = Date.now() + 600000;
+  while (!(await phase(page)).endsWith(':inning') && Date.now() < deadline) {
+    const ph = await phase(page);
     const ready = page.getByRole('button', { name: 'Ready' });
-    if (await ready.isVisible()) {
-      if (shoe === 0) await page.screenshot({ path: `${out}/${name}-4-handoff.png` });
+    if (ph.endsWith(':handoff') && (await ready.isVisible())) {
+      if (!handoffShot) await page.screenshot({ path: `${out}/${name}-4-handoff.png`, timeout: 120000 });
+      handoffShot = true;
       await ready.click();
+    } else if (ph.endsWith(':aim') && !(await page.locator('#controls.npc').count())) {
+      await pitch(page, viewport).catch(() => errors.push(`${name}: no result for shoe ${pitched + 1}`));
+      pitched++;
+    } else if (ph.endsWith(':result')) {
+      // Tap to move on from the result (it also moves on by itself after a few seconds).
+      await page.waitForTimeout(600);
+      if ((await phase(page)).endsWith(':result')) await page.mouse.click(viewport.width / 2, viewport.height / 2);
     }
-    await page.waitForTimeout(500);
-    await pitch(page, viewport).catch(() => errors.push(`${name}: no result for shoe ${shoe + 1}`));
-    // Tap to move on from the result (it also moves on by itself after a few seconds).
-    await page.waitForTimeout(600);
-    if ((await phase(page)).endsWith(':result')) await page.mouse.click(viewport.width / 2, viewport.height / 2);
-    await page.waitForFunction(() => !window.__dusk.phase.endsWith(':result'), null, { timeout: 20000 });
     await page.waitForTimeout(400);
   }
+  if (vsComputer && pitched !== 2) errors.push(`${name}: expected to pitch 2 of 4 shoes against the computer, pitched ${pitched}`);
+  if (vsComputer) console.log(name, 'opponent said:', await page.locator('#say').textContent());
   await page.waitForSelector('.card.inning', { timeout: 15000 }).catch(() => errors.push(`${name}: no inning summary`));
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${out}/${name}-5-inning.png` });

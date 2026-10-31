@@ -314,6 +314,35 @@ button:focus-visible {
   }
 }
 
+/* ── Speech bubble for the opponent's lines ───────────────────────── */
+#say {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--controls-h, 64px) + 14px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(460px, calc(100% - 32px));
+  padding: 8px 14px;
+  border-radius: 14px 14px 14px 4px;
+  background: rgba(255, 247, 234, 0.94);
+  color: #2a1d14;
+  font-size: 15px;
+  line-height: 1.35;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+#say.hidden {
+  opacity: 0;
+}
+#say b {
+  margin-right: 6px;
+}
+
+.card .eyebrow.section {
+  margin-top: 14px;
+  text-align: left;
+}
+
 /* ── Scoreboard names ─────────────────────────────────────────────── */
 .name {
   color: var(--ink);
@@ -339,6 +368,11 @@ button:focus-visible {
 
 #controls.hidden {
   display: none;
+}
+/* The computer is pitching: controls are for show. */
+#controls.npc {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* ── Overlay cards ────────────────────────────────────────────────── */

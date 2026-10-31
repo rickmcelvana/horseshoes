@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { FAR_STAKE, NEAR_STAKE, alternateFirstPitcher, other, type Player } from '../rules';
 import { DEFAULT_PARAMS, initPhysics } from '../physics/sim';
 import { mulberry32 } from '../physics/rng';
-import { MatchFlow, type MatchSetup, type ModeKey } from './matchFlow';
+import { MatchFlow, npcPlayer, type MatchSetup, type ModeKey } from './matchFlow';
+import { npcSwing } from '../ai/arm';
 import { ThrowSession } from './session';
 
 beforeAll(() => initPhysics());
@@ -111,5 +112,30 @@ describe('hot-seat match', () => {
     expect(b.inningNumber).toBe(2);
     expect(b.target).toBe(FAR_STAKE);
     expect(b.phase).toBe('handoff');
+  });
+});
+
+describe('computer opponents', () => {
+  it('two characters play a whole game with their own grips, lines and pressure', () => {
+    const session = new ThrowSession({ ...DEFAULT_PARAMS, clay: { ...DEFAULT_PARAMS.clay } });
+    const flow = new MatchFlow(session, { mode: 'backyard21', players: [npcPlayer('professor'), npcPlayer('mae')] }, 0);
+    const rng = mulberry32(21);
+    const seen = new Set<string>();
+    let guard = 0;
+    while (flow.phase !== 'over' && guard++ < 5_000_000) {
+      if (flow.phase === 'handoff') flow.acceptHandoff();
+      else if (flow.phase === 'aim') {
+        const p = flow.pitcher;
+        const c = flow.character(p)!;
+        const shoe = flow.pitch(npcSwing(c, flow.situation(p), rng))!;
+        seen.add(`${c.id}:${shoe.input.grip}:${shoe.input.line}:${shoe.input.stance}`);
+      } else if (flow.phase === 'flight') session.step();
+      else if (flow.phase === 'result') flow.ready();
+      else if (flow.phase === 'inning') flow.nextInning();
+    }
+    expect(flow.phase).toBe('over');
+    expect(Math.max(...flow.state.scores)).toBeGreaterThanOrEqual(21);
+    expect(seen).toEqual(new Set(['professor:one-and-quarter:full:right', 'mae:flip:short:left']));
+    session.sim.world.free();
   });
 });
