@@ -204,7 +204,9 @@ async function start() {
   const frameBoard = (stake: Stake) => {
     const { position, facing } = boardPlacement(stake);
     const normal = new THREE.Vector3(-Math.sin(0.35), 0, facing * Math.cos(0.35));
-    rig.frame(position.clone().addScaledVector(normal, 1.7).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, 0.22, 0)), 2);
+    // Far enough back that the whole board fits a phone held upright; aimed a little
+    // high so the board sits below the inning card.
+    rig.frame(position.clone().addScaledVector(normal, 3).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, 0.14, 0)), 2.5);
   };
 
   // ── HUD ─────────────────────────────────────────────────────────────
