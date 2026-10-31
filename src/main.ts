@@ -449,6 +449,8 @@ async function start() {
 
   function refresh() {
     const p = ctl.phase;
+    // Once a shoe is in the air the hint has done its job (an online guest's throws arrive this way).
+    if (p === 'flight') hint.classList.add('hidden');
     // Someone else is pitching: the computer, or a friend online.
     const npcTurn = !!(mode === 'match' && view && !view.controlledHere(view.pitcher));
     swing.enabled = mode !== 'menu' && p === 'aim' && !npcTurn;
