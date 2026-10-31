@@ -16,14 +16,12 @@ export interface QualityProfile {
   lampShadows: boolean;
   fireflies: number;
   anisotropy: number;
-  /** Distant tree line. */
-  trees: number;
 }
 
 export const PROFILES: Record<Tier, QualityProfile> = {
-  low: { tier: 'low', maxPixelRatio: 1, shadowMapSize: 1024, bloom: false, stringLights: 0, lampShadows: false, fireflies: 24, anisotropy: 2, trees: 24 },
-  medium: { tier: 'medium', maxPixelRatio: 1.5, shadowMapSize: 2048, bloom: false, stringLights: 2, lampShadows: false, fireflies: 48, anisotropy: 4, trees: 48 },
-  high: { tier: 'high', maxPixelRatio: 2, shadowMapSize: 2048, bloom: true, stringLights: 4, lampShadows: true, fireflies: 80, anisotropy: 8, trees: 72 },
+  low: { tier: 'low', maxPixelRatio: 1, shadowMapSize: 1024, bloom: false, stringLights: 0, lampShadows: false, fireflies: 24, anisotropy: 2 },
+  medium: { tier: 'medium', maxPixelRatio: 1.5, shadowMapSize: 2048, bloom: false, stringLights: 2, lampShadows: false, fireflies: 48, anisotropy: 4 },
+  high: { tier: 'high', maxPixelRatio: 2, shadowMapSize: 2048, bloom: true, stringLights: 4, lampShadows: true, fireflies: 80, anisotropy: 8 },
 };
 
 const ORDER: Tier[] = ['low', 'medium', 'high'];
