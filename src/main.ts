@@ -1,15 +1,14 @@
 import './style.css';
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { IN, type Player } from './rules';
+import { FAR_STAKE, IN, NEAR_STAKE, type Player, type Pose, type Stake, stakeAxisAt } from './rules';
 import { STEP, initPhysics, type ShoeSim } from './physics/sim';
 import { GRIPS, type FoulLine, type Grip, type Stance } from './physics/throw';
 import { SwingInput, type SwingResult } from './input/swing';
-import { buildCourt, buildLights } from './render/court';
-import { createShoeMesh } from './render/shoeMesh';
-import { CameraRig } from './render/cameraRig';
-import { GhostArc } from './render/ghostArc';
+import { Stage } from './render/stage';
+import { boardPlacement, type BoardState } from './render/chalkboard';
+import { closeCallKind, closeCallLabel } from './render/closeCall';
 import { Practice, SET_SIZE, describeResult } from './game/practice';
+import { matchDusk, practiceDusk } from './game/duskProgress';
 import { MODE_INFO, MatchFlow, type MatchSetup, type SavedMatch } from './game/matchFlow';
 import { ThrowSession, type Controller, type ShoeResult } from './game/session';
 import { applyLaunch, buildTuningPanel, loadSettings, saveSettings } from './game/tuning';
@@ -45,47 +44,32 @@ async function start() {
   applyLaunch(settings);
   const session = new ThrowSession(settings.sim);
 
-  // Renderer and scene.
+  // Rendering.
   const canvas = $<HTMLCanvasElement>('#view');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
-  renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 1.1;
-  const scene = new THREE.Scene();
-  // Something for the steel to reflect until the real dusk sky arrives in Phase 2.
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.5;
-  buildLights(scene);
-  scene.add(buildCourt());
-  const rig = new CameraRig();
-  const ghost = new GhostArc();
-  scene.add(ghost.line);
+  const stage = new Stage(canvas, settings.look.quality, $('#inset'), $('#measure'));
+  const { rig, ghost } = stage;
+  window.addEventListener('resize', () => stage.resize());
 
-  const meshes = new Map<number, THREE.Object3D>();
-  const meshFor = (s: ShoeSim) => {
-    let m = meshes.get(s.id);
-    if (!m) {
-      m = createShoeMesh(s.owner);
-      meshes.set(s.id, m);
-      scene.add(m);
+  // Clay keeps marks: a dent and a scuff where a shoe landed and slid, and its
+  // imprint when it's picked up.
+  const lastPoses = new Map<number, Pose>();
+  session.onRemoved = (s, pose) => {
+    stage.dropShoe(s);
+    lastPoses.set(s.id, pose);
+    stage.pitFor(s.target).imprint(pose, s.plugged ? 0.012 : 0.004);
+  };
+  const markLanding = (s: ShoeSim) => {
+    const l = s.landing;
+    if (!l) return;
+    const rest = session.sim.shoes.includes(s) ? s.body.translation() : lastPoses.get(s.id)?.position;
+    if (!rest) return;
+    const pit = stage.pitFor(s.target);
+    if (Math.hypot(rest.x - l.position.x, rest.z - l.position.z) > 0.05) {
+      const depth = Math.min(0.008, 0.002 + Math.max(0, -l.velocity.y) * 0.0012);
+      pit.imprint({ position: l.position, rotation: l.rotation }, depth, 0.8);
+      pit.skid(l.position, rest);
     }
-    return m;
   };
-  session.onRemoved = (s) => {
-    const m = meshes.get(s.id);
-    if (m) scene.remove(m);
-    meshes.delete(s.id);
-  };
-
-  const resize = () => {
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-    rig.resize(canvas.clientWidth, canvas.clientHeight);
-  };
-  window.addEventListener('resize', resize);
-  resize();
 
   // Sounds from the physics.
   session.sim.onImpact = (e) => {
@@ -118,8 +102,11 @@ async function start() {
     refresh();
   };
 
+  const rakePits = () => stage.pits.forEach((p) => p.rake());
+
   const goMenu = () => {
     mode = 'menu';
+    endCloseCall(false);
     hint.classList.add('hidden');
     toast.classList.add('hidden');
     flow = null;
@@ -141,6 +128,7 @@ async function start() {
     mode = 'practice';
     flow = null;
     session.clear();
+    rakePits();
     hideOverlay();
     attach(new Practice(session));
     hint.classList.remove('hidden');
@@ -157,11 +145,66 @@ async function start() {
     mode = 'match';
     toast.classList.add('hidden');
     session.clear();
+    rakePits();
     flow = new MatchFlow(session, setup, opening);
     flow.onInning = (saved) => writeJson(SAVE_KEY, saved.state.winner === null ? saved : null);
     writeJson(SAVE_KEY, flow.save());
     attach(flow);
+    stage.dusk.setTarget(duskTarget(), true);
+    updateBoards(false);
     if (flow.state.innings.length === 0) hint.classList.remove('hidden');
+  };
+
+  // ── Dusk and chalkboards ────────────────────────────────────────────
+
+  const duskTarget = () => {
+    if (!settings.look.autoTime) return settings.look.timeOfDay;
+    if (mode === 'match' && flow) return matchDusk(flow.state);
+    if (mode === 'practice' && ctl instanceof Practice) return practiceDusk(ctl.stats.thrown);
+    return 0.12;
+  };
+
+  let boardKey = '';
+  const updateBoards = (animate: boolean) => {
+    let state: BoardState;
+    if (mode === 'match' && flow) {
+      const f = flow;
+      const cfg = f.state.config;
+      const live = (i: (typeof f.state.innings)[number], p: Player) =>
+        cfg.scoring === 'count-all' ? i.score.ringers[p] > 0 : i.score.ringers[p] > i.score.ringers[p === 0 ? 1 : 0];
+      state = {
+        title: MODE_INFO[f.setup.mode].label,
+        footer: cfg.pointLimit !== null ? `Inning ${f.inningNumber} · first to ${cfg.pointLimit}` : `Inning ${f.inningNumber} · ${cfg.shoeLimit} shoes`,
+        rows: ([0, 1] as Player[]).map((p) => ({
+          name: f.name(p),
+          color: playerColor(p),
+          innings: f.state.innings.map((i) => ({ points: i.score.points[p], ringer: live(i, p) })),
+        })),
+      };
+    } else if (ctl instanceof Practice && mode === 'practice') {
+      const hist = ctl.history;
+      state = {
+        title: 'Practice',
+        footer: `${ctl.stats.thrown} shoes`,
+        rows: [
+          { name: 'Ringers', color: '#ffd36b', innings: hist.map((h) => ({ points: h === 'ringer' ? 1 : 0, ringer: h === 'ringer' })) },
+          { name: 'In count', color: '#b8e07a', innings: hist.map((h) => ({ points: h === 'count' ? 1 : 0, ringer: false })) },
+        ],
+      };
+    } else {
+      state = { title: 'Dusk at the Pits', footer: 'Tonight: horseshoes', rows: [] };
+    }
+    const key = JSON.stringify(state);
+    if (key === boardKey) return;
+    boardKey = key;
+    for (const b of stage.boards) b.set(state, animate);
+  };
+
+  /** A camera shot of the chalkboard at one end. */
+  const frameBoard = (stake: Stake) => {
+    const { position, facing } = boardPlacement(stake);
+    const normal = new THREE.Vector3(-Math.sin(0.35), 0, facing * Math.cos(0.35));
+    rig.frame(position.clone().addScaledVector(normal, 1.7).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, 0.22, 0)), 2);
   };
 
   // ── HUD ─────────────────────────────────────────────────────────────
@@ -277,7 +320,12 @@ async function start() {
     const p = ctl.phase;
     swing.enabled = mode !== 'menu' && p === 'aim';
     rig.setAim(ctl.stance, ctl.target, ctl.line);
-    rig.go(p === 'flight' ? 'flight' : p === 'result' || p === 'inning' || p === 'over' ? 'pit' : 'aim');
+    if (!stage.closeCall.active) {
+      if (p === 'inning' && flow?.lastInning) frameBoard(flow.lastInning.number % 2 === 1 ? NEAR_STAKE : FAR_STAKE);
+      else rig.go(p === 'flight' ? 'flight' : p === 'result' || p === 'over' ? 'pit' : 'aim');
+    }
+    stage.dusk.setTarget(duskTarget());
+    updateBoards(true);
     ghost.update(ctl.grip, ctl.stance, ctl.line, ctl.target);
     ghost.line.visible = settings.aids && (p === 'aim' || p === 'handoff') && mode !== 'menu';
     refreshControls();
@@ -299,10 +347,32 @@ async function start() {
   };
 
   let resultAt = 0;
+  let pendingToast: ShoeResult | null = null;
   function onResult(r: ShoeResult) {
-    showToast(r);
+    markLanding(r.shoe);
     resultAt = performance.now();
+    // Close calls get measured on camera before the result card.
+    const kind = closeCallKind(r.measure, r.foul);
+    if (kind) {
+      const label = closeCallLabel(kind, r.measure);
+      stage.closeCall.setLabel(label.text, label.good);
+      stage.closeCall.start(kind, r.measure, stakeAxisAt(r.shoe.target, r.measure.straightedge.a.y), rig.camera.position);
+      rig.frame(stage.closeCall.cameraPos, stage.closeCall.cameraLook, 3.5);
+      pendingToast = r;
+    } else {
+      showToast(r);
+    }
     refresh();
+  }
+
+  /** End the close-call shot (early or on time) and show the result card. */
+  function endCloseCall(showResult = true) {
+    if (!stage.closeCall.active) return;
+    stage.closeCall.stop();
+    if (pendingToast && showResult) showToast(pendingToast);
+    pendingToast = null;
+    resultAt = performance.now();
+    rig.go('pit');
   }
 
   const finishResult = () => {
@@ -323,7 +393,6 @@ async function start() {
   swing.onThrow = (r: SwingResult) => {
     const shoe = ctl.pitch(r);
     if (!shoe) return;
-    meshFor(shoe);
     hint.classList.add('hidden');
     toast.classList.add('hidden');
   };
@@ -333,7 +402,8 @@ async function start() {
     // A tap during the result skips ahead; the short delay stops it from also starting a swing.
     if (ctl.phase === 'result' && performance.now() - resultAt > 400) {
       swing.enabled = false;
-      finishResult();
+      if (stage.closeCall.active) endCloseCall();
+      else finishResult();
       window.setTimeout(refresh, 250);
     }
   });
@@ -382,36 +452,17 @@ async function start() {
       refresh();
     },
     changed: () => {},
+    look: () => {
+      stage.setTier(settings.look.quality);
+      stage.dusk.setTarget(duskTarget(), true);
+      fpsEl.hidden = !settings.look.showFps;
+    },
   });
+  const fpsEl = $('#fps');
+  fpsEl.hidden = !settings.look.showFps;
+  stage.onQualityChange = (q) => console.info(`Quality stepped down to ${q.tier} to keep the frame rate up.`);
   if (!new URLSearchParams(location.search).has('tune')) gui.hide();
   $('#tune').addEventListener('click', () => (gui._hidden ? gui.show() : gui.hide()));
-
-  // Stake cam: a zoomed inset of the target pit while aiming, since the stake is
-  // only a few pixels wide from 40 feet on a phone.
-  const inset = new THREE.PerspectiveCamera(5, 4 / 3, 0.5, 60);
-  const insetFrame = $('#inset');
-  const drawInset = () => {
-    const show = mode !== 'menu' && ctl.phase === 'aim';
-    insetFrame.classList.toggle('hidden', !show);
-    if (!show) return;
-    const r = insetFrame.getBoundingClientRect();
-    const box = canvas.getBoundingClientRect();
-    const x = r.left - box.left;
-    const y = box.bottom - r.bottom;
-    inset.aspect = r.width / r.height;
-    inset.updateProjectionMatrix();
-    inset.position.copy(rig.camera.position);
-    const t = ctl.target.base;
-    inset.lookAt(t.x, 0.16, t.z);
-    renderer.setScissorTest(true);
-    renderer.setScissor(x, y, r.width, r.height);
-    renderer.setViewport(x, y, r.width, r.height);
-    const ghostVisible = ghost.line.visible;
-    ghost.line.visible = false;
-    renderer.render(scene, inset);
-    ghost.line.visible = ghostVisible;
-    renderer.setScissorTest(false);
-  };
 
   // ── Main loop: physics at a fixed 240 Hz, rendering at display rate ──
 
@@ -429,26 +480,23 @@ async function start() {
     }
     if (steps === 48) acc = 0;
 
-    let flying: THREE.Vector3 | null = null;
+    stage.syncShoes(session.sim.shoes);
     const pit = ctl.shoesInPit();
-    for (const s of session.sim.shoes) {
-      const m = meshFor(s);
-      const t = s.body.translation();
-      const q = s.body.rotation();
-      m.position.set(t.x, t.y, t.z);
-      m.quaternion.set(q.x, q.y, q.z, q.w);
-      if (s === pit[pit.length - 1]) flying = m.position;
-    }
-    if (ctl.phase === 'result' && now - resultAt > 3500) finishResult();
+    const newest = pit[pit.length - 1];
+    const flying = newest ? (stage.meshOf(newest)?.position ?? null) : null;
+
+    if (stage.closeCall.active) {
+      if (stage.closeCall.update(dt, rig.camera, { w: canvas.clientWidth, h: canvas.clientHeight })) endCloseCall();
+    } else if (ctl.phase === 'result' && now - resultAt > 3500) finishResult();
+
     rig.update(dt, ctl.phase === 'flight' ? flying : null);
-    renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight);
-    renderer.setScissorTest(false);
-    renderer.render(scene, rig.camera);
-    drawInset();
+    stage.render(dt, mode !== 'menu' && ctl.phase === 'aim' ? ctl.target : null);
+    if (settings.look.showFps) fpsEl.textContent = `${Math.round(stage.fps)} fps · ${stage.tier}`;
     requestAnimationFrame(frame);
   };
 
-  // Read-only peek for the browser smoke test.
+  // Hooks for the browser smoke test: read the phase, or pitch an exact throw
+  // (software rendering is too slow for synthetic swings to be repeatable).
   Object.assign(window, {
     __dusk: {
       get phase() {
@@ -457,10 +505,14 @@ async function start() {
       get shoes() {
         return ctl.shoesInPit().length;
       },
+      pitch(power = 1, aim = 0, release = 0) {
+        swing.onThrow?.({ power, aim, release, wobble: 0, speedRatio: 1 });
+      },
     },
   });
 
   goMenu();
+  stage.dusk.setTarget(duskTarget(), true);
   requestAnimationFrame(frame);
   $('#loading').classList.add('done');
 }

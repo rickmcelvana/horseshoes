@@ -101,3 +101,30 @@ describe('distance', () => {
     expect(m.ringer).toBe(true);
   });
 });
+
+describe('measurement geometry for the close-call cam', () => {
+  const horizontal = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+
+  it('the nearest points are exactly the measured distance apart', () => {
+    for (const gap of [0.5, 1.75, 3, 5.5]) {
+      const z = stakeZ + COURT.stakeRadius + SHOE.toeRadius + SHOE.barWidth / 2 + gap * IN;
+      const m = measureShoe(flat(z, TOE_NEG_Z, 0.3 * IN), NEAR_STAKE);
+      expect(horizontal(m.nearest.shoe, m.nearest.stake)).toBeCloseTo(m.distance, 9);
+    }
+  });
+
+  it('the stake point sits on the stake surface', () => {
+    const m = measureShoe(flat(stakeZ + 6 * IN, TOE_NEG_Z, 2 * IN), NEAR_STAKE);
+    const axis = stakeAxisAt(NEAR_STAKE, m.nearest.stake.y);
+    expect(horizontal(m.nearest.stake, axis)).toBeCloseTo(COURT.stakeRadius, 9);
+  });
+
+  it('straightedge clearance agrees with the ringer call', () => {
+    for (const back of [0.3, 0.45, 0.55, 0.7, 1.5]) {
+      const m = measureShoe(flat(stakeZ + SHOE.legLength - back * IN), NEAR_STAKE);
+      expect(m.straightedge.encircles).toBe(true);
+      expect(m.ringer).toBe(m.straightedge.clearance > 0);
+      expect(m.straightedge.clearance).toBeCloseTo((back - 0.5) * IN, 4);
+    }
+  });
+});

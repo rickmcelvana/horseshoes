@@ -9,6 +9,7 @@ import {
   SHOE,
   type Player,
   type Pose,
+  type Quat,
   type Stake,
   type Vec3,
   add,
@@ -102,8 +103,8 @@ export interface ShoeSim {
   landed: boolean;
   plugged: boolean;
   hitStake: boolean;
-  /** Where and how hard it first hit the clay, for marks in the pit. */
-  landing: { position: Vec3; speed: number } | null;
+  /** Where, how and how hard it first hit the clay, for marks in the pit. */
+  landing: { position: Vec3; rotation: Quat; velocity: Vec3; speed: number } | null;
   /** At rest right now. A later shoe can knock it loose again. */
   settled: boolean;
   slowFor: number;
@@ -347,7 +348,8 @@ export class PitSim {
     const v = shoe.body.linvel();
     const speed = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
     shoe.landed = true;
-    shoe.landing = { position: { ...shoe.body.translation() }, speed };
+    const q = shoe.body.rotation();
+    shoe.landing = { position: { ...shoe.body.translation() }, rotation: { x: q.x, y: q.y, z: q.z, w: q.w }, velocity: v3(v.x, v.y, v.z), speed };
     const steep = speed > 0 ? -v.y / speed : 0;
     const roll = shoe.rng();
     if (steep > clay.plugSteepness && roll < clay.plugChance) {

@@ -18,6 +18,8 @@ The menu offers **Play a match** and **Practice**.
 
 **Practice** pitches sets of four shoes at one stake and keeps running stats.
 
+**The court at dusk (Phase 2).** The sun sets as the game goes on: string lights come on mid-game, fireflies past the halfway mark, full dark at match point. The clay keeps every dent, scuff and imprint for the whole match. A chalkboard at each end keeps score in tally marks, with ringer innings underlined. When a shoe stops near the stake, the camera drops to the clay and a caliper or straightedge measures it, showing the same number the rules engine scored.
+
 ### Controls
 
 - **Throw:** press anywhere, pull back (down), then swing forward (up) and let go.
@@ -27,6 +29,7 @@ The menu offers **Play a match** and **Practice**.
 - **Grip** changes the spin. A perfect throw with any grip arrives open and rings the stake.
 - **Stance** (left/right platform) locks for the second shoe of a pair, as in the rulebook.
 - **Ghost arc** shows the arc a perfect throw flies. It never changes the throw.
+- **⚙ → Look** sets quality (auto, low, medium, high), lets you pin the time of day, and can show the frame rate.
 - **⚙** opens the tuning panel (or add `?tune` to the URL). Settings save in your browser; **Copy settings** puts them on the clipboard so they can become the new defaults.
 
 ## Development
@@ -49,13 +52,15 @@ npm run dev
 
 The smoke test needs a server running first, for example `npm run build && npx vite preview --port 4173`.
 
+Textures in `public/textures` are CC0 from Poly Haven; see the credits file there.
+
 ## Layout
 
 | Folder | Owns |
 | --- | --- |
 | `src/rules` | Court and shoe geometry, measuring, scoring, match flow. No 3D or physics imports. |
 | `src/physics` | Rapier world, shoe colliders, launch math, clay, fouls, settle detection. Runs in Node. |
-| `src/render` | Three.js scene, shoe mesh, cameras, aim aids |
+| `src/render` | Stage (renderer, bloom, quality tiers), dusk lighting, court and props, clay marks, chalkboards, close-call cam, cameras, aim aids |
 | `src/input` | Swing gesture |
 | `src/game` | Throw session, practice, hot-seat match flow, tuning panel |
 | `src/ui` | Menu and match cards |

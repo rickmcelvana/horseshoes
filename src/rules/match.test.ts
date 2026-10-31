@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { IN } from './court';
+import { bareMeasure } from './measure';
 import { MODES, alternateFirstPitcher, applyInning, newMatch, pitchOrder, type MatchState } from './match';
 import type { PitchedShoe, Player } from './scoring';
 
 const s = (player: Player, inches: number | 'R'): PitchedShoe => ({
   player,
   foul: false,
-  measure: { ringer: inches === 'R', distance: inches === 'R' ? 0 : inches * IN, touching: false, leaner: false },
+  measure: bareMeasure({ ringer: inches === 'R', distance: inches === 'R' ? 0 : inches * IN, touching: false, leaner: false }),
 });
 
 /** An inning where `who` scores `n` points under cancellation (n in 0,1,2,3,4,6). */

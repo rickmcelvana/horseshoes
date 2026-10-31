@@ -6,6 +6,7 @@ import { IN } from '../rules';
 import { CLAY_PRESETS, DEFAULT_PARAMS, type SimParams } from '../physics/sim';
 import { LAUNCH } from '../physics/throw';
 import { DEFAULT_SWING, type SwingTuning } from '../input/swing';
+import type { TierSetting } from '../render/quality';
 
 const KEY = 'dusk.tuning.v1';
 
@@ -14,6 +15,7 @@ export interface Settings {
   swing: SwingTuning;
   launch: { aimHeightIn: number; aimShortIn: number; releaseHeight: number };
   aids: boolean;
+  look: { quality: TierSetting; autoTime: boolean; timeOfDay: number; showFps: boolean };
 }
 
 function defaults(): Settings {
@@ -22,6 +24,7 @@ function defaults(): Settings {
     swing: { ...DEFAULT_SWING },
     launch: { aimHeightIn: LAUNCH.aimHeight / IN, aimShortIn: LAUNCH.aimShort / IN, releaseHeight: LAUNCH.releaseHeight },
     aids: true,
+    look: { quality: 'auto', autoTime: true, timeOfDay: 0.2, showFps: false },
   };
 }
 
@@ -36,6 +39,7 @@ export function loadSettings(): Settings {
       swing: { ...d.swing, ...s.swing },
       launch: { ...d.launch, ...s.launch },
       aids: s.aids ?? d.aids,
+      look: { ...d.look, ...s.look },
     };
   } catch {
     return d;
@@ -56,12 +60,19 @@ export function applyLaunch(s: Settings) {
   LAUNCH.releaseHeight = s.launch.releaseHeight;
 }
 
-export function buildTuningPanel(s: Settings, hooks: { rebuild: () => void; changed: () => void }): GUI {
+export function buildTuningPanel(s: Settings, hooks: { rebuild: () => void; changed: () => void; look: () => void }): GUI {
   const gui = new GUI({ title: 'Tuning' });
   const save = () => {
     saveSettings(s);
     hooks.changed();
   };
+
+  const look = gui.addFolder('Look');
+  const onLook = () => (saveSettings(s), hooks.look());
+  look.add(s.look, 'quality', ['auto', 'low', 'medium', 'high']).name('Quality').onChange(onLook);
+  look.add(s.look, 'autoTime').name('Dusk follows the score').onChange(onLook);
+  look.add(s.look, 'timeOfDay', 0, 1, 0.01).name('Time of day').onChange(onLook);
+  look.add(s.look, 'showFps').name('Show frame rate').onChange(onLook);
 
   const clay = gui.addFolder('Clay');
   const preset = { preset: 'wet' as keyof typeof CLAY_PRESETS };
