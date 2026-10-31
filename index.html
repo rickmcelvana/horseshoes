@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#2a1d14" />
+    <title>Dusk at the Pits</title>
+    <script type="module" crossorigin src="/horseshoes/assets/index-BkqMSphC.js"></script>
+    <link rel="stylesheet" crossorigin href="/horseshoes/assets/index-B4CvmCVe.css">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+      <svg id="trail" aria-hidden="true"><polyline points="" /></svg>
+
+      <header id="top">
+        <div class="brand">Dusk at the Pits <span>practice</span></div>
+        <div id="stats" aria-live="polite"></div>
+      </header>
+
+      <div id="toast" class="hidden" aria-live="assertive">
+        <div class="title"></div>
+        <div class="detail"></div>
+        <div class="readout"></div>
+      </div>
+
+      <div id="hint" class="hidden">Press and pull back, then swing forward and let go</div>
+
+      <div id="set" aria-label="Shoes in the pit"></div>
+      <div id="inset" class="hidden" aria-hidden="true"><span>stake cam</span></div>
+
+      <footer id="controls">
+        <div class="group" role="radiogroup" aria-label="Grip" id="grips"></div>
+        <div class="group" role="radiogroup" aria-label="Stance" id="stance">
+          <button data-stance="left">Left</button>
+          <button data-stance="right">Right</button>
+        </div>
+        <div class="group" role="radiogroup" aria-label="Foul line" id="line">
+          <button data-line="full">40 ft</button>
+          <button data-line="short">30 ft</button>
+        </div>
+        <div class="group">
+          <button id="aids" aria-pressed="true" title="Show the arc a perfect throw would fly">Ghost arc</button>
+          <button id="clear">Clear pit</button>
+          <button id="tune" title="Physics and swing tuning" aria-label="Tuning">⚙</button>
+          <button id="menu" title="Menu" aria-label="Menu">☰</button>
+        </div>
+      </footer>
+
+      <div id="overlay" class="hidden"></div>
+
+      <div id="loading">Raking the clay…</div>
+    </div>
+  </body>
+</html>
