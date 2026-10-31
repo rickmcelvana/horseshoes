@@ -505,6 +505,9 @@ async function start() {
       get shoes() {
         return ctl.shoesInPit().length;
       },
+      get fps() {
+        return Math.round(stage.fps);
+      },
       pitch(power = 1, aim = 0, release = 0) {
         swing.onThrow?.({ power, aim, release, wobble: 0, speedRatio: 1 });
       },
