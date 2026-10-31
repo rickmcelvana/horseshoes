@@ -1,0 +1,61 @@
+name: Test and deploy
+
+# Every push runs the checks, then publishes to GitHub Pages:
+#   main            → https://<owner>.github.io/<repo>/
+#   any other branch → https://<owner>.github.io/<repo>/preview/<branch>/
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: test-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=""; else dir="preview/${GITHUB_REF_NAME//\//-}"; fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          BASE_PATH="/${{ github.event.repository.name }}/${dir:+$dir/}" npm run build
+        id: build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+    outputs:
+      dir: ${{ steps.build.outputs.dir }}
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # One deploy at a time: every branch writes into the same gh-pages branch.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          destination_dir: ${{ needs.test.outputs.dir }}
+          keep_files: true
+          commit_message: 'Deploy ${{ github.ref_name }} @ ${{ github.sha }}'
