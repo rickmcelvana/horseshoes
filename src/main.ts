@@ -330,7 +330,8 @@ async function start() {
         nameChip(0, `${flow.name(0)} ${a}`, pitching === 0),
         ' · ',
         nameChip(1, `${flow.name(1)} ${b}`, pitching === 1),
-        ` · inning ${flow.inningNumber} · ${progress}`,
+        // Between innings, keep naming the inning just played (the card is about it).
+        ` · inning ${flow.phase === 'inning' || flow.phase === 'over' ? flow.state.innings.length : flow.inningNumber} · ${progress}`,
       );
     } else if (ctl instanceof Practice) {
       brandSub.textContent = mode === 'menu' ? '' : 'practice';

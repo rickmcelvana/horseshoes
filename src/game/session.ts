@@ -21,6 +21,11 @@ export class ThrowSession {
   onRemoved: ((s: ShoeSim, lastPose: Pose) => void) | null = null;
   /** Shoes judged foul during this session, even after they've been pulled. */
   readonly fouls = new Set<ShoeSim>();
+  /**
+   * Judge shoes as they settle. Off for an online guest, whose shoes are judged
+   * by the host (the guest's simulation is only for show).
+   */
+  judging = true;
   private pending: ShoeSim | null = null;
 
   constructor(params: SimParams) {
@@ -44,7 +49,7 @@ export class ThrowSession {
 
   step() {
     this.sim.step();
-    if (this.pending && this.sim.allSettled()) {
+    if (this.pending && this.judging && this.sim.allSettled()) {
       const shoe = this.pending;
       this.pending = null;
       this.onSettled?.(this.judge(shoe));
@@ -54,6 +59,18 @@ export class ThrowSession {
   /** Would this shoe be foul if judged now? (No side effects.) */
   isFoulNow(shoe: ShoeSim): boolean {
     return this.fouls.has(shoe) || !this.sim.shoes.includes(shoe) || this.sim.isFoul(shoe);
+  }
+
+  /** Put a shoe in the pit already at rest (an online guest catching up with the host). */
+  addAtRest(input: ThrowInput, owner: Player, target: Stake, pose: Pose): ShoeSim {
+    const shoe = this.sim.throwShoe(input, owner, target);
+    this.sim.placeAtRest(shoe, pose);
+    return shoe;
+  }
+
+  /** Stop waiting on the shoe in flight (the host has ruled on it). */
+  settlePending() {
+    this.pending = null;
   }
 
   /** Measure a shoe where it lies, without judging it (no side effects). */
