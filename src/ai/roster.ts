@@ -4,6 +4,9 @@
 // `scale` is calibrated by `npm run calibrate` so that, under no pressure, the
 // character's ringer rate matches `targetRingerPct`. Re-run it whenever the
 // physics or launch math changes.
+//
+// Last calibration (2,000 shoes each, no pressure): Rookie 7.0% (target 8),
+// Mae 23.9% (25), Uncle Dale 34.4% (35), Professor 50.7% (50).
 
 import type { FoulLine, Grip, Stance } from '../physics/throw';
 
@@ -39,7 +42,7 @@ export const ROSTER: Record<CharacterId, Character> = {
     line: 'full',
     stance: 'right',
     targetRingerPct: 8,
-    scale: 1.62,
+    scale: 1.1,
     pressure: 0.3,
   },
   mae: {
@@ -50,7 +53,7 @@ export const ROSTER: Record<CharacterId, Character> = {
     line: 'short',
     stance: 'left',
     targetRingerPct: 25,
-    scale: 1.22,
+    scale: 0.67,
     pressure: 0,
   },
   dale: {
@@ -61,7 +64,7 @@ export const ROSTER: Record<CharacterId, Character> = {
     line: 'full',
     stance: 'right',
     targetRingerPct: 35,
-    scale: 0.62,
+    scale: 0.391,
     pressure: -0.2,
   },
   professor: {
@@ -72,7 +75,7 @@ export const ROSTER: Record<CharacterId, Character> = {
     line: 'full',
     stance: 'right',
     targetRingerPct: 50,
-    scale: 0.45,
+    scale: 0.281,
     pressure: 0.8,
   },
 };

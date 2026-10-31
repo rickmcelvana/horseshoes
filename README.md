@@ -18,6 +18,17 @@ The menu offers **Play a match** and **Practice**.
 
 **Practice** pitches sets of four shoes at one stake and keeps running stats.
 
+**Computer opponents (Phase 3).** Pick one in match setup instead of a friend. They throw through the same physics with the same kind of throw input a player makes, aiming for a perfect throw and missing by their own calibrated scatter. Pressure (behind late, or a ringer to answer) widens or tightens it.
+
+| Opponent | Grip | Ringers | Under pressure |
+| --- | --- | --- | --- |
+| The Rookie | Flip | ~8%, improving each game you play them | Chokes a little |
+| Mae | Flip, 30 ft line | ~25% | Never flinches |
+| Uncle Dale | 1¾ turn | ~35% | Gets sharper |
+| The Professor | 1¼ turn | ~50% | Overthinks badly |
+
+Each has a bank of canned lines; Phase 5 adds an optional LLM voice on top.
+
 **The court at dusk (Phase 2).** The sun sets as the game goes on: string lights come on mid-game, fireflies past the halfway mark, full dark at match point. The clay keeps every dent, scuff and imprint for the whole match. A chalkboard at each end keeps score in tally marks, with ringer innings underlined. When a shoe stops near the stake, the camera drops to the clay and a caliper or straightedge measures it, showing the same number the rules engine scored.
 
 ### Controls
@@ -48,6 +59,7 @@ npm run dev
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Production build into `dist/` |
 | `npm run sim -- --n 500 --noise 1` | Headless throw simulator: outcome rates per grip for noisy throws |
+| `npm run calibrate` | Tunes each computer opponent's scatter to its target ringer rate with the real physics (`-- --check` just measures) |
 | `npm run smoke` | Loads a running build in headless Chromium, pitches in practice, plays one hot-seat inning, saves screenshots to `test-results/` |
 
 The smoke test needs a server running first, for example `npm run build && npx vite preview --port 4173`.
@@ -64,5 +76,6 @@ Textures in `public/textures` are CC0 from Poly Haven; see the credits file ther
 | `src/input` | Swing gesture |
 | `src/game` | Throw session, practice, hot-seat match flow, tuning panel |
 | `src/ui` | Menu and match cards |
+| `src/ai` | Computer opponents: roster, the throwing arm and its pressure model, canned lines |
 | `src/audio` | Placeholder clang and thud |
 | `tools/` | Throw simulator and browser smoke test |
