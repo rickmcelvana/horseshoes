@@ -95,7 +95,7 @@ export class Chalkboard {
     c.globalAlpha = 1;
     c.fillStyle = '#25302b';
     c.fillRect(0, 0, W, H);
-    c.globalAlpha = 0.12;
+    c.globalAlpha = 0.05;
     c.drawImage(this.grain, 0, 0, W, H);
     c.globalAlpha = 1;
 
@@ -110,7 +110,7 @@ export class Chalkboard {
     this.state.rows.forEach((row, r) => this.drawRow(row, r));
     // Chalk is never solid: knock specks out of everything drawn.
     c.globalCompositeOperation = 'destination-out';
-    c.globalAlpha = 0.22;
+    c.globalAlpha = 0.15;
     c.drawImage(this.grain, 0, 0, W, H);
     c.globalCompositeOperation = 'source-over';
     c.globalAlpha = 1;

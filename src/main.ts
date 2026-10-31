@@ -206,7 +206,8 @@ async function start() {
     const normal = new THREE.Vector3(-Math.sin(0.35), 0, facing * Math.cos(0.35));
     // Far enough back that the whole board fits a phone held upright; aimed a little
     // high so the board sits below the inning card.
-    rig.frame(position.clone().addScaledVector(normal, 3).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, 0.14, 0)), 2.5);
+    const lift = canvas.clientWidth > canvas.clientHeight ? 0.36 : 0.14; // wide screens: card overlaps more
+    rig.frame(position.clone().addScaledVector(normal, 3).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, lift, 0)), 2.5);
   };
 
   // ── HUD ─────────────────────────────────────────────────────────────
