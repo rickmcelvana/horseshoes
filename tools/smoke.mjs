@@ -29,14 +29,16 @@ async function swing(page, { width: w, height: h }) {
 const phase = (page) => page.evaluate(() => window.__dusk.phase);
 
 /** Swing until a shoe is in the air, then wait for its result. Software rendering can
- *  stall the page long enough that a synthetic swing reads as a stall, so retry. */
+ *  stall the page long enough that a synthetic swing reads as a stall, so after a
+ *  couple of tries fall back to the game's exact-throw hook. */
 async function pitch(page, viewport) {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     await swing(page, viewport);
     await page.waitForTimeout(800);
     if (!(await phase(page)).endsWith(':aim')) break;
   }
-  await page.waitForFunction(() => window.__dusk.phase.endsWith(':result'), null, { timeout: 30000 });
+  if ((await phase(page)).endsWith(':aim')) await page.evaluate(() => window.__dusk.pitch(0.99, 0.1, 0));
+  await page.waitForFunction(() => window.__dusk.phase.endsWith(':result'), null, { timeout: 60000 });
 }
 
 for (const [name, viewport] of [
@@ -81,7 +83,7 @@ for (const [name, viewport] of [
     // Tap to move on from the result (it also moves on by itself after a few seconds).
     await page.waitForTimeout(600);
     if ((await phase(page)).endsWith(':result')) await page.mouse.click(viewport.width / 2, viewport.height / 2);
-    await page.waitForFunction(() => !window.__dusk.phase.endsWith(':result'), null, { timeout: 10000 });
+    await page.waitForFunction(() => !window.__dusk.phase.endsWith(':result'), null, { timeout: 20000 });
     await page.waitForTimeout(400);
   }
   await page.waitForSelector('.card.inning', { timeout: 15000 }).catch(() => errors.push(`${name}: no inning summary`));

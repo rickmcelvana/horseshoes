@@ -56,7 +56,7 @@ function buildEnd(g: THREE.Group, stake: Stake, mats: Materials) {
 function buildTrees(count: number): THREE.Group {
   const g = new THREE.Group();
   if (count === 0) return g;
-  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x2f3d22, roughness: 1, flatShading: true }), count);
+  const crown = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshStandardMaterial({ color: 0x223018, roughness: 1 }), count);
   const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.18, 1, 6), new THREE.MeshStandardMaterial({ color: 0x3b2d22, roughness: 1 }), count);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -64,11 +64,12 @@ function buildTrees(count: number): THREE.Group {
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < count; i++) {
     const a = (i / count) * Math.PI * 2 + rnd() * 0.2;
-    const r = 20 + rnd() * 16;
-    const x = Math.cos(a) * r * 0.8;
+    // Far enough that fog turns them into a soft tree line behind the yard.
+    const r = 55 + rnd() * 25;
+    const x = Math.cos(a) * r * 0.75;
     const z = FAR_STAKE.base.z / 2 + Math.sin(a) * r;
-    const h = 4 + rnd() * 5;
-    const s = 1.8 + rnd() * 2.2;
+    const h = 6 + rnd() * 4;
+    const s = 3 + rnd() * 2.5;
     crown.setMatrixAt(i, m.compose(new THREE.Vector3(x, h, z), q, new THREE.Vector3(s, s * (1.1 + rnd() * 0.5), s)));
     trunk.setMatrixAt(i, m.compose(new THREE.Vector3(x, h / 2 - 0.5, z), q, new THREE.Vector3(1, h, 1)));
   }

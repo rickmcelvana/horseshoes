@@ -13,9 +13,19 @@ export interface Materials {
 }
 
 const loader = new THREE.TextureLoader();
+/** Work waiting for a texture's image (cloning one before then makes three.js warn). */
+const pending = new WeakMap<THREE.Texture, (() => void)[]>();
+
+function whenLoaded(t: THREE.Texture, f: () => void) {
+  if (t.image) f();
+  else pending.set(t, [...(pending.get(t) ?? []), f]);
+}
 
 function load(name: string, srgb: boolean, repeat: [number, number], anisotropy: number): THREE.Texture {
-  const t = loader.load(`${import.meta.env.BASE_URL}textures/${name}.jpg`);
+  const t = loader.load(`${import.meta.env.BASE_URL}textures/${name}.jpg`, (tex) => {
+    for (const f of pending.get(tex) ?? []) f();
+    pending.delete(tex);
+  });
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(...repeat);
   t.anisotropy = anisotropy;
@@ -56,10 +66,12 @@ export function tiledClone(m: THREE.MeshStandardMaterial, u: number, v: number):
   for (const key of ['map', 'normalMap', 'aoMap', 'roughnessMap', 'metalnessMap'] as const) {
     const t = m[key];
     if (t) {
-      const tc = t.clone();
-      tc.repeat.set(u, v);
-      tc.needsUpdate = true;
-      c[key] = tc;
+      // Until the image arrives the shared texture stands in, tiled the default way.
+      whenLoaded(t, () => {
+        const tc = t.clone();
+        tc.repeat.set(u, v);
+        c[key] = tc;
+      });
     }
   }
   return c;
