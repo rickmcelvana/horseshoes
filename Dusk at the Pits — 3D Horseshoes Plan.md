@@ -2,7 +2,7 @@
 
 Oct 30, 2026 · @Rick · revised Oct 31, 2026
 
-**Status:** Phases 0–2 passed playtesting. Phase 3 (computer opponents) is built and deployed for playtesting; all four characters are calibrated within 1–2 points of their target ringer rates.
+**Status:** Phases 0–3 passed playtesting. Phase 4 (online play) is built and deployed for playtesting: host and guest agree on every shoe in tests, and an online inning plays end to end in the browser against a local broker.
 
 ## Vision
 
@@ -160,6 +160,8 @@ Two stages: hot-seat on one device first, then online play by sending a friend a
 - **Host is the referee.** After a shoe settles, the host sends its final pose; the guest snaps to it if anything drifted. Scores always come from the host.
 - Version check on connect: both peers must run the same build, since determinism only holds within one build.
 - Extras: emote buttons and quick-chat lines; reconnect if a tab drops mid-game.
+- The host also sends its physics and launch tuning at the start, so a tuned host and an untuned guest still simulate the same world. Online games aren't saved for Resume.
+- In tests the guest's own simulation lands exactly where the host's does (zero drift before snapping), so the host's snap is a safety net rather than a visible correction.
 
 **Fallback:** if a strict NAT blocks the peer connection, add a TURN server or a tiny WebSocket relay on the homelab.
 

@@ -16,8 +16,9 @@ const base = process.argv[2] ?? 'http://localhost:4173/';
 const out = process.argv[3] ?? 'test-results';
 mkdirSync(out, { recursive: true });
 
-const broker = PeerServer({ port: 9000, path: '/' });
-const peerParams = 'peerhost=localhost&peerport=9000&peerpath=/&peersecure=0';
+// Bind to IPv4: some containers have no IPv6.
+const broker = PeerServer({ host: '127.0.0.1', port: 9000, path: '/' });
+const peerParams = 'peerhost=127.0.0.1&peerport=9000&peerpath=/&peersecure=0';
 const errors = [];
 const lowQuality = JSON.stringify({ look: { quality: 'low', autoTime: true, timeOfDay: 0.2, showFps: false } });
 
