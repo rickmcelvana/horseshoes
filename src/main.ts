@@ -1,33 +1,56 @@
 import './style.css';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { COURT, IN, NEAR_STAKE } from './rules';
+import { IN, type Player } from './rules';
 import { STEP, initPhysics, type ShoeSim } from './physics/sim';
-import { GRIPS, LAUNCH, type FoulLine, type Grip, type Stance } from './physics/throw';
+import { GRIPS, type FoulLine, type Grip, type Stance } from './physics/throw';
 import { SwingInput, type SwingResult } from './input/swing';
 import { buildCourt, buildLights } from './render/court';
-import { createShoeMesh, SHOE_COLORS } from './render/shoeMesh';
+import { createShoeMesh } from './render/shoeMesh';
 import { CameraRig } from './render/cameraRig';
 import { GhostArc } from './render/ghostArc';
-import { Practice, SET_SIZE, describeResult, type ShoeResult } from './game/practice';
+import { Practice, SET_SIZE, describeResult } from './game/practice';
+import { MODE_INFO, MatchFlow, type MatchSetup, type SavedMatch } from './game/matchFlow';
+import { ThrowSession, type Controller, type ShoeResult } from './game/session';
 import { applyLaunch, buildTuningPanel, loadSettings, saveSettings } from './game/tuning';
 import { clang, thud, unlockAudio } from './audio/sfx';
+import { confirmLeave, hideOverlay, playerColor, showGameOver, showHandoff, showInning, showMenu, showSetup, showToss } from './ui/overlay';
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
+
+const SAVE_KEY = 'dusk.match.v1';
+const PLAYERS_KEY = 'dusk.setup.v1';
+
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+function writeJson(key: string, value: unknown) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage blocked: the match just won't survive a reload.
+  }
+}
 
 async function start() {
   await initPhysics();
 
   const settings = loadSettings();
   applyLaunch(settings);
-  const practice = new Practice(settings.sim);
+  const session = new ThrowSession(settings.sim);
 
   // Renderer and scene.
   const canvas = $<HTMLCanvasElement>('#view');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = 1.1;
   const scene = new THREE.Scene();
@@ -51,25 +74,102 @@ async function start() {
     }
     return m;
   };
-  const dropMesh = (s: ShoeSim) => {
+  session.onRemoved = (s) => {
     const m = meshes.get(s.id);
     if (m) scene.remove(m);
     meshes.delete(s.id);
   };
 
   const resize = () => {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    renderer.setSize(w, h, false);
-    rig.resize(w, h);
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+    rig.resize(canvas.clientWidth, canvas.clientHeight);
   };
   window.addEventListener('resize', resize);
   resize();
 
-  // UI.
+  // Sounds from the physics.
+  session.sim.onImpact = (e) => {
+    const v = e.speed;
+    if (e.kind === 'stake' && v > 0.3) clang(v);
+    else if (e.kind === 'shoe' && v > 0.3) clang(v * 0.4);
+    else if (e.kind === 'clay' && v > 0.5) thud(v);
+    else if ((e.kind === 'ground' || e.kind === 'backboard') && v > 0.5) thud(v, e.kind === 'backboard');
+  };
+
+  // ── Modes ───────────────────────────────────────────────────────────
+
+  let mode: 'menu' | 'practice' | 'match' = 'menu';
+  let ctl: Controller = new Practice(session);
+  let flow: MatchFlow | null = null;
+  let shownPhase = '';
+  let lastSetup: MatchSetup = readJson<MatchSetup>(PLAYERS_KEY) ?? {
+    mode: 'cancellation',
+    players: [
+      { name: 'Player 1', line: 'full' },
+      { name: 'Player 2', line: 'full' },
+    ],
+  };
+
+  const attach = (c: Controller) => {
+    ctl = c;
+    c.onResult = onResult;
+    c.onChange = refresh;
+    shownPhase = '';
+    refresh();
+  };
+
+  const goMenu = () => {
+    mode = 'menu';
+    hint.classList.add('hidden');
+    toast.classList.add('hidden');
+    flow = null;
+    session.clear();
+    attach(new Practice(session));
+    showMenu({
+      saved: readJson<SavedMatch>(SAVE_KEY),
+      practice: startPractice,
+      newMatch: () => showSetup(lastSetup, { back: goMenu, start: toss }),
+      resume: () => {
+        const saved = readJson<SavedMatch>(SAVE_KEY);
+        if (saved) startMatch(saved.setup, saved);
+      },
+    });
+    refresh();
+  };
+
+  const startPractice = () => {
+    mode = 'practice';
+    flow = null;
+    session.clear();
+    hideOverlay();
+    attach(new Practice(session));
+    hint.classList.remove('hidden');
+  };
+
+  const toss = (setup: MatchSetup) => {
+    lastSetup = setup;
+    writeJson(PLAYERS_KEY, setup);
+    const winner: Player = Math.random() < 0.5 ? 0 : 1;
+    showToss(setup, winner, (first) => startMatch(setup, first));
+  };
+
+  const startMatch = (setup: MatchSetup, opening: Player | SavedMatch) => {
+    mode = 'match';
+    toast.classList.add('hidden');
+    session.clear();
+    flow = new MatchFlow(session, setup, opening);
+    flow.onInning = (saved) => writeJson(SAVE_KEY, saved.state.winner === null ? saved : null);
+    writeJson(SAVE_KEY, flow.save());
+    attach(flow);
+    if (flow.state.innings.length === 0) hint.classList.remove('hidden');
+  };
+
+  // ── HUD ─────────────────────────────────────────────────────────────
+
   const toast = $('#toast');
   const hint = $('#hint');
   const stats = $('#stats');
+  const brandSub = $('.brand span');
   const setList = $('#set');
   let toastTimer = 0;
 
@@ -82,50 +182,53 @@ async function start() {
     gripBox.append(b);
   }
 
-  const refreshControls = () => {
-    gripBox.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.grip === practice.grip)));
-    $('#stance')
-      .querySelectorAll<HTMLButtonElement>('button')
-      .forEach((b) => {
-        b.setAttribute('role', 'radio');
-        b.setAttribute('aria-checked', String(b.dataset.stance === practice.stance));
-        b.disabled = practice.stanceLocked && b.dataset.stance !== practice.stance;
-        b.title = practice.stanceLocked ? 'Both shoes of a pair are pitched from the same platform' : '';
-      });
-    $('#line')
-      .querySelectorAll<HTMLButtonElement>('button')
-      .forEach((b) => {
-        b.setAttribute('role', 'radio');
-        b.setAttribute('aria-checked', String(b.dataset.line === practice.line));
-      });
-    $('#aids').setAttribute('aria-pressed', String(settings.aids));
-    ghost.line.visible = settings.aids && practice.phase === 'aim';
-    ghost.update(practice.grip, practice.stance, practice.line);
-    const foul = practice.line === 'full' ? COURT.foulLineFull : COURT.foulLineShort;
-    rig.setAim(practice.stance, NEAR_STAKE.base.z + foul - LAUNCH.reachPastFoulLine);
+  const nameChip = (p: Player, text: string, current = false) => {
+    const s = document.createElement('span');
+    s.className = `name${current ? ' current' : ''}`;
+    s.style.setProperty('--c', playerColor(p));
+    s.textContent = text;
+    return s;
   };
 
-  const refreshStats = () => {
-    const s = practice.stats;
-    const pct = (n: number) => (s.thrown ? Math.round((100 * n) / s.thrown) : 0);
-    const n = (k: number, word: string) => `${k} ${word}${k === 1 ? '' : 's'}`;
-    stats.textContent = `${n(s.thrown, 'shoe')} · ${n(s.ringers, 'ringer')} (${pct(s.ringers)}%) · ${s.inCount} in count · ${n(s.fouls, 'foul')}`;
+  const refreshTop = () => {
+    if (mode === 'match' && flow) {
+      brandSub.textContent = MODE_INFO[flow.setup.mode].label.toLowerCase();
+      const [a, b] = flow.state.scores;
+      const pitching = ['aim', 'flight', 'result', 'handoff'].includes(flow.phase) ? flow.pitcher : null;
+      const cfg = flow.state.config;
+      const progress =
+        cfg.shoeLimit !== null ? `shoe ${Math.min(cfg.shoeLimit, flow.state.innings.length * 2 + 2)} of ${cfg.shoeLimit}` : `to ${cfg.pointLimit}`;
+      stats.replaceChildren(
+        nameChip(0, `${flow.name(0)} ${a}`, pitching === 0),
+        ' · ',
+        nameChip(1, `${flow.name(1)} ${b}`, pitching === 1),
+        ` · inning ${flow.inningNumber} · ${progress}`,
+      );
+    } else if (ctl instanceof Practice) {
+      brandSub.textContent = mode === 'menu' ? '' : 'practice';
+      const s = ctl.stats;
+      const pct = (n: number) => (s.thrown ? Math.round((100 * n) / s.thrown) : 0);
+      const n = (k: number, word: string) => `${k} ${word}${k === 1 ? '' : 's'}`;
+      stats.textContent =
+        mode === 'menu' ? '' : `${n(s.thrown, 'shoe')} · ${n(s.ringers, 'ringer')} (${pct(s.ringers)}%) · ${s.inCount} in count · ${n(s.fouls, 'foul')}`;
+    }
+  };
 
+  const refreshSet = () => {
     setList.replaceChildren();
-    const live = practice.set.filter((sh) => practice.sim.shoes.includes(sh));
-    const measures = practice.measureSet();
-    live.forEach((sh, i) => {
-      if (sh === practice.set[practice.set.length - 1] && practice.phase === 'flight') return;
-      const m = measures[i];
+    const inFlight = ctl.phase === 'flight';
+    const shoes = ctl.shoesInPit();
+    shoes.forEach((sh, i) => {
+      if (inFlight && i === shoes.length - 1) return;
+      const m = session.measure(sh);
       const el = document.createElement('div');
       el.className = 'shoe';
-      el.style.color = `#${SHOE_COLORS[sh.owner].toString(16).padStart(6, '0')}`;
+      el.style.color = playerColor(sh.owner);
       const label = m.ringer ? 'ringer' : m.distance <= 6 * IN ? `${(m.distance / IN).toFixed(1)} in` : 'out';
       el.innerHTML = `<span>${label}</span>`;
       setList.append(el);
     });
-    const left = SET_SIZE - practice.set.length;
-    if (practice.set.length && left === 0 && practice.phase !== 'flight') {
+    if (ctl instanceof Practice && ctl.set.length === SET_SIZE && !inFlight) {
       const el = document.createElement('div');
       el.className = 'shoe';
       el.innerHTML = '<span>next shoe clears the pit</span>';
@@ -133,21 +236,83 @@ async function start() {
     }
   };
 
-  const showToast = (r: ShoeResult, swing: SwingResult | null) => {
+  const refreshControls = () => {
+    gripBox.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.grip === ctl.grip)));
+    $('#stance')
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => {
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(b.dataset.stance === ctl.stance));
+        b.disabled = ctl.stanceLocked && b.dataset.stance !== ctl.stance;
+        b.title = ctl.stanceLocked ? 'Both shoes of a pair are pitched from the same platform' : '';
+      });
+    $('#line')
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => {
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(b.dataset.line === ctl.line));
+      });
+    $('#line').hidden = mode === 'match';
+    $('#clear').hidden = mode !== 'practice';
+    $('#controls').classList.toggle('hidden', mode === 'menu');
+    $('#aids').setAttribute('aria-pressed', String(settings.aids));
+  };
+
+  const refreshOverlay = () => {
+    if (mode !== 'match' || !flow) return;
+    const key = `${flow.phase}:${flow.inningNumber}:${flow.shoeIndex}`;
+    if (key === shownPhase) return;
+    const prev = shownPhase;
+    shownPhase = key;
+    const f = flow;
+    if (f.phase === 'handoff') showHandoff(f, !prev.startsWith('handoff') && f.shoeIndex === 0, () => f.acceptHandoff());
+    else if (f.phase === 'inning') showInning(f, () => f.nextInning());
+    else if (f.phase === 'over') {
+      writeJson(SAVE_KEY, null);
+      showGameOver(f, { menu: goMenu, rematch: () => toss(f.setup) });
+    } else hideOverlay();
+  };
+
+  function refresh() {
+    const p = ctl.phase;
+    swing.enabled = mode !== 'menu' && p === 'aim';
+    rig.setAim(ctl.stance, ctl.target, ctl.line);
+    rig.go(p === 'flight' ? 'flight' : p === 'result' || p === 'inning' || p === 'over' ? 'pit' : 'aim');
+    ghost.update(ctl.grip, ctl.stance, ctl.line, ctl.target);
+    ghost.line.visible = settings.aids && (p === 'aim' || p === 'handoff') && mode !== 'menu';
+    refreshControls();
+    refreshTop();
+    refreshSet();
+    refreshOverlay();
+  }
+
+  const showToast = (r: ShoeResult) => {
     const d = describeResult(r);
     toast.className = d.tone;
     toast.querySelector('.title')!.textContent = d.title;
     toast.querySelector('.detail')!.textContent = d.detail;
     const i = r.input;
     const pull = i.aim === 0 ? 'straight' : `${i.aim < 0 ? 'left' : 'right'} ${Math.abs(i.aim).toFixed(2)}`;
-    toast.querySelector('.readout')!.textContent = swing
-      ? `power ${(i.power * 100).toFixed(1)}% · arc ${i.release >= 0 ? '+' : ''}${i.release.toFixed(2)} · pull ${pull} · wobble ${i.wobble.toFixed(2)}`
-      : '';
+    toast.querySelector('.readout')!.textContent = `power ${(i.power * 100).toFixed(1)}% · arc ${i.release >= 0 ? '+' : ''}${i.release.toFixed(2)} · pull ${pull} · wobble ${i.wobble.toFixed(2)}`;
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => toast.classList.add('hidden'), 3200);
   };
 
-  // Input.
+  let resultAt = 0;
+  function onResult(r: ShoeResult) {
+    showToast(r);
+    resultAt = performance.now();
+    refresh();
+  }
+
+  const finishResult = () => {
+    if (ctl.phase !== 'result') return;
+    toast.classList.add('hidden');
+    ctl.ready();
+  };
+
+  // ── Input ───────────────────────────────────────────────────────────
+
   const swing = new SwingInput(canvas, settings.swing);
   const trail = $('#trail');
   const poly = trail.querySelector('polyline')!;
@@ -155,111 +320,78 @@ async function start() {
     poly.setAttribute('points', pts.map((p) => `${p.x},${p.y}`).join(' '));
     trail.classList.toggle('forward', phase === 'forward');
   };
-
-  let lastSwing: SwingResult | null = null;
-  swing.onThrow = (r) => {
-    const shoe = practice.pitch(r);
+  swing.onThrow = (r: SwingResult) => {
+    const shoe = ctl.pitch(r);
     if (!shoe) return;
-    lastSwing = r;
     meshFor(shoe);
-    rig.go('flight');
     hint.classList.add('hidden');
     toast.classList.add('hidden');
-    refreshControls();
-    refreshStats();
   };
 
-  let resultAt = 0;
-  practice.onResult = (r) => {
-    showToast(r, lastSwing);
-    rig.go('pit');
-    swing.enabled = false;
-    resultAt = performance.now();
-    refreshControls();
-    refreshStats();
-  };
-  practice.onRemoved = dropMesh;
-
-  const backToAim = () => {
-    if (practice.phase !== 'result') return;
-    practice.ready();
-    rig.go('aim');
-    // Short pause so the tap that skips the result doesn't also start a swing.
-    window.setTimeout(() => (swing.enabled = true), 250);
-    refreshControls();
-  };
   canvas.addEventListener('pointerdown', () => {
     unlockAudio();
-    if (practice.phase === 'result' && performance.now() - resultAt > 400) backToAim();
+    // A tap during the result skips ahead; the short delay stops it from also starting a swing.
+    if (ctl.phase === 'result' && performance.now() - resultAt > 400) {
+      swing.enabled = false;
+      finishResult();
+      window.setTimeout(refresh, 250);
+    }
   });
+  document.addEventListener('pointerdown', unlockAudio, { once: true });
 
   gripBox.addEventListener('click', (e) => {
     const g = (e.target as HTMLElement).closest('button')?.dataset.grip as Grip | undefined;
-    if (g) practice.grip = g;
-    refreshControls();
+    if (g) ctl.grip = g;
+    refresh();
   });
   $('#stance').addEventListener('click', (e) => {
     const s = (e.target as HTMLElement).closest('button')?.dataset.stance as Stance | undefined;
-    if (s) practice.setStance(s);
-    refreshControls();
+    if (s) ctl.setStance(s);
+    refresh();
   });
   $('#line').addEventListener('click', (e) => {
     const l = (e.target as HTMLElement).closest('button')?.dataset.line as FoulLine | undefined;
-    if (l) practice.line = l;
-    refreshControls();
+    if (l && ctl instanceof Practice) ctl.line = l;
+    refresh();
   });
   $('#aids').addEventListener('click', () => {
     settings.aids = !settings.aids;
     saveSettings(settings);
-    refreshControls();
+    refresh();
   });
   $('#clear').addEventListener('click', () => {
-    practice.clearPit();
-    if (practice.phase === 'result') backToAim();
-    refreshStats();
-    refreshControls();
+    if (ctl instanceof Practice) ctl.clearPit();
+    toast.classList.add('hidden');
   });
-
-  // Sounds from the physics.
-  const hookSounds = () => {
-    practice.sim.onImpact = (e) => {
-      const v = e.speed;
-      if (e.kind === 'stake' && v > 0.3) clang(v);
-      else if (e.kind === 'shoe' && v > 0.3) clang(v * 0.4);
-      else if (e.kind === 'clay' && v > 0.5) thud(v);
-      else if ((e.kind === 'ground' || e.kind === 'backboard') && v > 0.5) thud(v, e.kind === 'backboard');
-    };
-  };
-  hookSounds();
+  $('#menu').addEventListener('click', () => {
+    if (mode === 'match' && flow && flow.phase !== 'over') {
+      const back = () => {
+        shownPhase = '';
+        hideOverlay();
+        refresh();
+      };
+      confirmLeave(goMenu, back);
+    } else goMenu();
+  });
 
   const gui = buildTuningPanel(settings, {
     rebuild: () => {
-      practice.rebuild(settings.sim);
-      for (const id of [...meshes.keys()]) {
-        const m = meshes.get(id)!;
-        scene.remove(m);
-        meshes.delete(id);
-      }
-      hookSounds();
-      swing.enabled = true;
-      rig.go('aim');
-      refreshStats();
-      refreshControls();
+      session.rebuild(settings.sim);
+      if (flow) flow.restartInning();
+      else if (ctl instanceof Practice) ctl.clearPit();
+      refresh();
     },
     changed: () => {},
   });
   if (!new URLSearchParams(location.search).has('tune')) gui.hide();
   $('#tune').addEventListener('click', () => (gui._hidden ? gui.show() : gui.hide()));
 
-  refreshControls();
-  refreshStats();
-
   // Stake cam: a zoomed inset of the target pit while aiming, since the stake is
   // only a few pixels wide from 40 feet on a phone.
   const inset = new THREE.PerspectiveCamera(5, 4 / 3, 0.5, 60);
   const insetFrame = $('#inset');
   const drawInset = () => {
-    const show = practice.phase === 'aim';
+    const show = mode !== 'menu' && ctl.phase === 'aim';
     insetFrame.classList.toggle('hidden', !show);
     if (!show) return;
     const r = insetFrame.getBoundingClientRect();
@@ -269,17 +401,20 @@ async function start() {
     inset.aspect = r.width / r.height;
     inset.updateProjectionMatrix();
     inset.position.copy(rig.camera.position);
-    inset.lookAt(NEAR_STAKE.base.x, 0.16, NEAR_STAKE.base.z);
+    const t = ctl.target.base;
+    inset.lookAt(t.x, 0.16, t.z);
     renderer.setScissorTest(true);
     renderer.setScissor(x, y, r.width, r.height);
     renderer.setViewport(x, y, r.width, r.height);
+    const ghostVisible = ghost.line.visible;
     ghost.line.visible = false;
     renderer.render(scene, inset);
-    ghost.line.visible = settings.aids;
+    ghost.line.visible = ghostVisible;
     renderer.setScissorTest(false);
   };
 
-  // Main loop: physics at a fixed 240 Hz, rendering at display rate.
+  // ── Main loop: physics at a fixed 240 Hz, rendering at display rate ──
+
   let last = performance.now();
   let acc = 0;
   const frame = (now: number) => {
@@ -288,31 +423,45 @@ async function start() {
     acc += dt;
     let steps = 0;
     while (acc >= STEP && steps < 48) {
-      practice.step();
+      session.step();
       acc -= STEP;
       steps++;
     }
     if (steps === 48) acc = 0;
 
     let flying: THREE.Vector3 | null = null;
-    for (const s of practice.sim.shoes) {
+    const pit = ctl.shoesInPit();
+    for (const s of session.sim.shoes) {
       const m = meshFor(s);
       const t = s.body.translation();
       const q = s.body.rotation();
       m.position.set(t.x, t.y, t.z);
       m.quaternion.set(q.x, q.y, q.z, q.w);
-      if (s === practice.set[practice.set.length - 1]) flying = m.position;
+      if (s === pit[pit.length - 1]) flying = m.position;
     }
-    if (practice.phase === 'result' && now - resultAt > 3500) backToAim();
-    rig.update(dt, practice.phase === 'flight' ? flying : null);
+    if (ctl.phase === 'result' && now - resultAt > 3500) finishResult();
+    rig.update(dt, ctl.phase === 'flight' ? flying : null);
     renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight);
     renderer.setScissorTest(false);
     renderer.render(scene, rig.camera);
     drawInset();
     requestAnimationFrame(frame);
   };
-  requestAnimationFrame(frame);
 
+  // Read-only peek for the browser smoke test.
+  Object.assign(window, {
+    __dusk: {
+      get phase() {
+        return `${mode}:${ctl.phase}`;
+      },
+      get shoes() {
+        return ctl.shoesInPit().length;
+      },
+    },
+  });
+
+  goMenu();
+  requestAnimationFrame(frame);
   $('#loading').classList.add('done');
 }
 

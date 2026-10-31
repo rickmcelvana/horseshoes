@@ -2,7 +2,7 @@
 
 Oct 30, 2026 · @Rick · revised Oct 31, 2026
 
-**Status:** Phase 0 is built and deployed for playtesting. The rules engine is done and tested; throwing feel needs Rick's hands on it.
+**Status:** Phase 0 passed its gate: Rick and a friend found throwing feels good on PC and smooth on a phone. Phase 1 (hot-seat matches) is built and deployed for playtesting.
 
 ## Vision
 
@@ -193,7 +193,8 @@ The player, the NPC and a remote friend all produce the same kind of throw input
 | `src/physics` | Rapier world, shoe collider, clay behavior, settle detection; no render imports |
 | `src/render` | Scene, lighting and dusk cycle, cameras, chalkboard, effects, quality tiers |
 | `src/input` | Swing gesture for mouse and touch, grip picker |
-| `src/game` | Inning state machine, match flow |
+| `src/game` | Throw session, practice, inning state machine and match flow, tuning panel |
+| `src/ui` | Menu and match cards: setup, coin toss, handoff, inning summary, game over |
 | `src/ai` | `arm` (NPC throws, skill profiles) and `mouth` (LLM client, canned lines) |
 | `src/net` | PeerJS rooms, input messages, host-authoritative results |
 | `src/audio` | Clang, thud, crowd and ambience via Web Audio |

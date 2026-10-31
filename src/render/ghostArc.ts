@@ -1,7 +1,7 @@
 // Aim aid: the arc a perfect throw would fly. It only shows information; it never changes the throw.
 
 import * as THREE from 'three';
-import { NEAR_STAKE } from '../rules';
+import type { Stake } from '../rules';
 import { GRAVITY, type FoulLine, type Grip, type Stance, launch, perfectThrow } from '../physics/throw';
 
 export class GhostArc {
@@ -14,8 +14,8 @@ export class GhostArc {
     this.line.frustumCulled = false;
   }
 
-  update(grip: Grip, stance: Stance, line: FoulLine) {
-    const s = launch(perfectThrow(grip, stance, line), NEAR_STAKE);
+  update(grip: Grip, stance: Stance, line: FoulLine, target: Stake) {
+    const s = launch(perfectThrow(grip, stance, line), target);
     const pts: THREE.Vector3[] = [];
     const n = 60;
     for (let i = 0; i <= n; i++) {

@@ -4,9 +4,21 @@ A browser-based 3D horseshoes game played by NHPA rules. See the [plan](./Dusk%2
 
 **Play:** every push deploys to GitHub Pages. `master` is at `https://rickmcelvana.github.io/horseshoes/`, and other branches at `…/horseshoes/preview/<branch-name-with-slashes-as-dashes>/`.
 
-## Phase 0: practice
+## Playing
 
-Pitch sets of four shoes at the stake and see how each one measures.
+The menu offers **Play a match** and **Practice**.
+
+**Matches (Phase 1)** are hot-seat: two players share one phone or computer.
+
+- Pick names, each player's distance (40 ft, or the 30 ft short line), and a game: cancellation to 40 (NHPA standard), count-all over 40 shoes, or backyard 21 (leaner = 2).
+- A coin toss decides who chooses the first pitcher. After that the rulebook decides: in cancellation whoever scored pitches first next; after a no-score inning, whoever pitched last.
+- Each inning both players pitch two shoes from the same end, then walk to the other end. A card says whose turn it is, so you know when to pass the phone.
+- After four shoes the inning is called the way pitchers call it ("Dale scores 4: a ringer and a point").
+- A match saves after every inning; if the tab reloads, **Resume** from the menu.
+
+**Practice** pitches sets of four shoes at one stake and keeps running stats.
+
+### Controls
 
 - **Throw:** press anywhere, pull back (down), then swing forward (up) and let go.
   - How fast you swing forward sets the power.
@@ -29,11 +41,11 @@ npm run dev
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | Rules fixtures, physics (stake tunneling, determinism, perfect throws) and architecture checks |
+| `npm test` | Rules fixtures, physics (stake tunneling, determinism, perfect throws), full headless matches, architecture checks |
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Production build into `dist/` |
 | `npm run sim -- --n 500 --noise 1` | Headless throw simulator: outcome rates per grip for noisy throws |
-| `npm run smoke` | Loads a running build in headless Chromium, pitches a shoe, saves screenshots to `test-results/` |
+| `npm run smoke` | Loads a running build in headless Chromium, pitches in practice, plays one hot-seat inning, saves screenshots to `test-results/` |
 
 The smoke test needs a server running first, for example `npm run build && npx vite preview --port 4173`.
 
@@ -45,6 +57,7 @@ The smoke test needs a server running first, for example `npm run build && npx v
 | `src/physics` | Rapier world, shoe colliders, launch math, clay, fouls, settle detection. Runs in Node. |
 | `src/render` | Three.js scene, shoe mesh, cameras, aim aids |
 | `src/input` | Swing gesture |
-| `src/game` | Practice loop, tuning panel |
+| `src/game` | Throw session, practice, hot-seat match flow, tuning panel |
+| `src/ui` | Menu and match cards |
 | `src/audio` | Placeholder clang and thud |
 | `tools/` | Throw simulator and browser smoke test |
