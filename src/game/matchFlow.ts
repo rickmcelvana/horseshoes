@@ -1,6 +1,9 @@
-// A hot-seat match: two players, one device. Owns the inning state machine
-// (who pitches, from which end, handoffs) and leans on the rules engine for
-// scoring, rotation and when the game ends.
+// A match: owns the inning state machine (who pitches, from which end,
+// handoffs) and leans on the rules engine for scoring, rotation and when the
+// game ends. Each side is a person at this device, a computer opponent, or (in
+// online play, on the host) a friend on another device.
+//
+// In online play the host runs this; the guest mirrors it (see net/guestMatch.ts).
 //
 //   handoff → aim → flight → result → (next shoe: aim or handoff)
 //                                   → after the 4th shoe: inning → handoff … → over
@@ -39,6 +42,8 @@ export interface PlayerSetup {
   line: FoulLine;
   /** A computer opponent plays this side. */
   npc?: CharacterId;
+  /** A friend on another device plays this side (online play, host's view). */
+  remote?: boolean;
 }
 
 /** Setup for a side played by a character: their name and their foul line. */
@@ -52,13 +57,43 @@ export interface MatchSetup {
   players: [PlayerSetup, PlayerSetup];
 }
 
+/** How a shoe finally lay, in plain data (it travels to the guest in online play). */
+export interface ShoeLabel {
+  player: Player;
+  foul: boolean;
+  ringer: boolean;
+  leaner: boolean;
+  /** Meters from the stake; -1 for a foul shoe. */
+  distance: number;
+}
+
 export interface InningSummary {
   number: number;
   score: InningScore;
   /** Each shoe as it finally lay, in pitch order. */
-  results: ShoeResult[];
+  shoes: ShoeLabel[];
   /** The score called the way pitchers call it. */
   call: string;
+}
+
+/** What the match screens need, whether the match runs here or is mirrored from a host. */
+export interface MatchView {
+  readonly setup: MatchSetup;
+  readonly state: MatchState;
+  readonly phase: Phase;
+  readonly pitcher: Player;
+  readonly inningNumber: number;
+  readonly shoeIndex: number;
+  readonly target: Stake;
+  readonly lastInning: InningSummary | null;
+  readonly nextFirstPitcher: Player;
+  name(p: Player): string;
+  character(p: Player): Character | null;
+  /** Someone at this device plays this side. */
+  controlledHere(p: Player): boolean;
+  stats(): { ringers: [number, number]; shoes: number };
+  acceptHandoff(): void;
+  nextInning(): void;
 }
 
 /** Everything needed to pick a match back up at an inning boundary. */
@@ -69,7 +104,17 @@ export interface SavedMatch {
   stances: [Stance, Stance];
 }
 
-export class MatchFlow implements Controller {
+/** Ringers thrown and shoes pitched so far, per player. */
+export function matchStats(state: MatchState): { ringers: [number, number]; shoes: number } {
+  const ringers: [number, number] = [0, 0];
+  for (const i of state.innings) {
+    ringers[0] += i.score.ringers[0];
+    ringers[1] += i.score.ringers[1];
+  }
+  return { ringers, shoes: state.innings.length * 2 };
+}
+
+export class MatchFlow implements Controller, MatchView {
   phase: Phase = 'handoff';
   state: MatchState;
   grips: [Grip, Grip] = ['one-and-quarter', 'one-and-quarter'];
@@ -81,6 +126,8 @@ export class MatchFlow implements Controller {
   onChange: (() => void) | null = null;
   /** Called after each inning so the match can be saved. */
   onInning: ((saved: SavedMatch) => void) | null = null;
+  /** Called with each shoe as it leaves the hand (online play sends it to the guest). */
+  onPitch: ((shoe: ShoeSim) => void) | null = null;
   private order: Player[];
 
   constructor(
@@ -159,6 +206,17 @@ export class MatchFlow implements Controller {
     return this.setup.players[p].name;
   }
 
+  controlledHere(p: Player): boolean {
+    const s = this.setup.players[p];
+    return !s.npc && !s.remote;
+  }
+
+  /** A remote player's choice of grip and platform, applied when it's their turn. */
+  setChoicesFor(p: Player, grip: Grip, stance: Stance) {
+    this.grips[p] = grip;
+    if (this.pitcher === p && !this.stanceLocked) this.stances[p] = stance;
+  }
+
   /** The character playing this side, if it's a computer opponent. */
   character(p: Player): Character | null {
     const id = this.setup.players[p].npc;
@@ -197,6 +255,7 @@ export class MatchFlow implements Controller {
     const shoe = this.session.throw(swing, { grip: this.grip, stance: this.stance, line: this.line }, player, this.target);
     this.thrown.push({ shoe, player });
     this.phase = 'flight';
+    this.onPitch?.(shoe);
     this.onChange?.();
     return shoe;
   }
@@ -224,7 +283,14 @@ export class MatchFlow implements Controller {
     const number = this.inningNumber;
     this.state = applyInning(this.state, shoes);
     const score = this.state.innings[this.state.innings.length - 1].score;
-    this.lastInning = { number, score, results, call: this.callScore(score) };
+    const labels: ShoeLabel[] = results.map((r, i) => ({
+      player: this.thrown[i].player,
+      foul: r.foul,
+      ringer: !r.foul && r.measure.ringer,
+      leaner: !r.foul && r.measure.leaner,
+      distance: r.foul ? -1 : r.measure.distance,
+    }));
+    this.lastInning = { number, score, shoes: labels, call: this.callScore(score) };
     this.phase = 'inning';
     this.onInning?.(this.save());
   }
@@ -251,14 +317,8 @@ export class MatchFlow implements Controller {
     return { setup: this.setup, state: this.state, grips: [...this.grips], stances: [...this.stances] };
   }
 
-  /** Ringers thrown and shoes pitched so far, per player. */
-  stats(): { ringers: [number, number]; shoes: number } {
-    const ringers: [number, number] = [0, 0];
-    for (const i of this.state.innings) {
-      ringers[0] += i.score.ringers[0];
-      ringers[1] += i.score.ringers[1];
-    }
-    return { ringers, shoes: this.state.innings.length * 2 };
+  stats() {
+    return matchStats(this.state);
   }
 
   callScore(score: InningScore): string {

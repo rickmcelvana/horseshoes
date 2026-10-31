@@ -10,11 +10,17 @@ import { closeCallKind, closeCallLabel } from './render/closeCall';
 import { npcSwing, seasonFactor, stress } from './ai/arm';
 import { lineFor, type LineEvent } from './ai/lines';
 import type { Character } from './ai/roster';
+import { HostLink } from './net/host';
+import { GuestMatch } from './net/guestMatch';
+import { RoomHost, joinRoom, normalizeCode } from './net/peer';
+import type { Channel } from './net/channel';
+import { EMOTES, PROTOCOL_VERSION, type EmoteId, type GuestMessage, type HostMessage } from './net/protocol';
+import { showJoin, showOnline, showRoom, showStatus, type OnlineProfile } from './ui/onlineCards';
 import { Practice, SET_SIZE, describeResult } from './game/practice';
 import { matchDusk, practiceDusk } from './game/duskProgress';
-import { MODE_INFO, MatchFlow, type MatchSetup, type SavedMatch } from './game/matchFlow';
+import { MODE_INFO, MatchFlow, type MatchSetup, type MatchView, type SavedMatch } from './game/matchFlow';
 import { ThrowSession, type Controller, type ShoeResult } from './game/session';
-import { applyLaunch, buildTuningPanel, loadSettings, readout, saveSettings } from './game/tuning';
+import { applyLaunch, applyLaunchValues, buildTuningPanel, loadSettings, readout, saveSettings } from './game/tuning';
 import { clang, thud, unlockAudio } from './audio/sfx';
 import { confirmLeave, hideOverlay, playerColor, showGameOver, showHandoff, showInning, showMenu, showSetup, showToss } from './ui/overlay';
 
@@ -24,6 +30,14 @@ const SAVE_KEY = 'dusk.match.v1';
 const PLAYERS_KEY = 'dusk.setup.v1';
 /** Games played against the Rookie, who improves over a season. */
 const ROOKIE_KEY = 'dusk.rookie.games';
+const ONLINE_KEY = 'dusk.online.v1';
+
+type Online =
+  | { role: 'host'; room: RoomHost; link: HostLink | null; profile: OnlineProfile }
+  | { role: 'guest'; code: string; profile: OnlineProfile; guest: GuestMatch | null; channel: Channel<HostMessage, GuestMessage> | null; leave: () => void; leaving: boolean };
+
+const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function readJson<T>(key: string): T | null {
   try {
@@ -89,7 +103,11 @@ async function start() {
 
   let mode: 'menu' | 'practice' | 'match' = 'menu';
   let ctl: Controller = new Practice(session);
+  /** The match run on this device (hot-seat, computer opponent, or hosting online). */
   let flow: MatchFlow | null = null;
+  /** The match on screen: `flow`, or an online guest's mirror of the host's. */
+  let view: MatchView | null = null;
+  let online: Online | null = null;
   let shownPhase = '';
   let lastSetup: MatchSetup = readJson<MatchSetup>(PLAYERS_KEY) ?? {
     mode: 'cancellation',
@@ -110,6 +128,7 @@ async function start() {
   const rakePits = () => stage.pits.forEach((p) => p.rake());
 
   const goMenu = () => {
+    leaveOnline();
     mode = 'menu';
     window.clearTimeout(npcTimer);
     npcKey = '';
@@ -118,9 +137,11 @@ async function start() {
     hint.classList.add('hidden');
     toast.classList.add('hidden');
     flow = null;
+    view = null;
     session.clear();
     attach(new Practice(session));
     showMenu({
+      online: openOnline,
       saved: readJson<SavedMatch>(SAVE_KEY),
       practice: startPractice,
       newMatch: () => showSetup(lastSetup, { back: goMenu, start: toss }),
@@ -135,6 +156,7 @@ async function start() {
   const startPractice = () => {
     mode = 'practice';
     flow = null;
+    view = null;
     session.clear();
     rakePits();
     hideOverlay();
@@ -149,14 +171,18 @@ async function start() {
     showToss(setup, winner, (first) => startMatch(setup, first));
   };
 
-  const startMatch = (setup: MatchSetup, opening: Player | SavedMatch) => {
+  const startMatch = (setup: MatchSetup, opening: Player | SavedMatch, hostingOnline = false) => {
     mode = 'match';
     toast.classList.add('hidden');
     session.clear();
     rakePits();
     flow = new MatchFlow(session, setup, opening);
-    flow.onInning = (saved) => writeJson(SAVE_KEY, saved.state.winner === null ? saved : null);
-    writeJson(SAVE_KEY, flow.save());
+    view = flow;
+    // Online games aren't saved for Resume: they need the friend on the other end.
+    if (!hostingOnline) {
+      flow.onInning = (saved) => writeJson(SAVE_KEY, saved.state.winner === null ? saved : null);
+      writeJson(SAVE_KEY, flow.save());
+    }
     attach(flow);
     stage.dusk.setTarget(duskTarget(), true);
     updateBoards(false);
@@ -170,15 +196,20 @@ async function start() {
   const sayEl = $('#say');
   let sayTimer = 0;
   let lastLine: string | null = null;
+  /** A speech bubble: a character's line, or a friend's quick chat. */
+  function bubble(name: string, text: string) {
+    sayEl.replaceChildren(Object.assign(document.createElement('b'), { textContent: name }), `“${text}”`);
+    sayEl.className = '';
+    window.clearTimeout(sayTimer);
+    sayTimer = window.setTimeout(() => (sayEl.className = 'hidden'), 4200);
+  }
+
   /** Show a character's line for this moment (they may keep quiet). */
   function say(c: Character, event: LineEvent) {
     const line = lineFor(c.id, event, Math.random, lastLine);
     if (!line) return;
     lastLine = line;
-    sayEl.replaceChildren(Object.assign(document.createElement('b'), { textContent: c.name }), `“${line}”`);
-    sayEl.className = '';
-    window.clearTimeout(sayTimer);
-    sayTimer = window.setTimeout(() => (sayEl.className = 'hidden'), 4200);
+    bubble(c.name, line);
   }
 
   let npcKey = '';
@@ -241,7 +272,7 @@ async function start() {
 
   const duskTarget = () => {
     if (!settings.look.autoTime) return settings.look.timeOfDay;
-    if (mode === 'match' && flow) return matchDusk(flow.state);
+    if (mode === 'match' && view) return matchDusk(view.state);
     if (mode === 'practice' && ctl instanceof Practice) return practiceDusk(ctl.stats.thrown);
     return 0.12;
   };
@@ -249,8 +280,8 @@ async function start() {
   let boardKey = '';
   const updateBoards = (animate: boolean) => {
     let state: BoardState;
-    if (mode === 'match' && flow) {
-      const f = flow;
+    if (mode === 'match' && view) {
+      const f = view;
       const cfg = f.state.config;
       const live = (i: (typeof f.state.innings)[number], p: Player) =>
         cfg.scoring === 'count-all' ? i.score.ringers[p] > 0 : i.score.ringers[p] > i.score.ringers[p === 0 ? 1 : 0];
@@ -319,18 +350,20 @@ async function start() {
   };
 
   const refreshTop = () => {
-    if (mode === 'match' && flow) {
-      brandSub.textContent = MODE_INFO[flow.setup.mode].label.toLowerCase();
-      const [a, b] = flow.state.scores;
-      const pitching = ['aim', 'flight', 'result', 'handoff'].includes(flow.phase) ? flow.pitcher : null;
-      const cfg = flow.state.config;
+    if (mode === 'match' && view) {
+      const v = view;
+      brandSub.textContent = (online ? 'online · ' : '') + MODE_INFO[v.setup.mode].label.toLowerCase();
+      const [a, b] = v.state.scores;
+      const pitching = ['aim', 'flight', 'result', 'handoff'].includes(v.phase) ? v.pitcher : null;
+      const cfg = v.state.config;
       const progress =
-        cfg.shoeLimit !== null ? `shoe ${Math.min(cfg.shoeLimit, flow.state.innings.length * 2 + 2)} of ${cfg.shoeLimit}` : `to ${cfg.pointLimit}`;
+        cfg.shoeLimit !== null ? `shoe ${Math.min(cfg.shoeLimit, v.state.innings.length * 2 + 2)} of ${cfg.shoeLimit}` : `to ${cfg.pointLimit}`;
       stats.replaceChildren(
-        nameChip(0, `${flow.name(0)} ${a}`, pitching === 0),
+        nameChip(0, `${v.name(0)} ${a}`, pitching === 0),
         ' · ',
-        nameChip(1, `${flow.name(1)} ${b}`, pitching === 1),
-        ` · inning ${flow.inningNumber} · ${progress}`,
+        nameChip(1, `${v.name(1)} ${b}`, pitching === 1),
+        // Between innings, keep naming the inning just played (the card is about it).
+        ` · inning ${v.phase === 'inning' || v.phase === 'over' ? v.state.innings.length : v.inningNumber} · ${progress}`,
       );
     } else if (ctl instanceof Practice) {
       brandSub.textContent = mode === 'menu' ? '' : 'practice';
@@ -387,35 +420,43 @@ async function start() {
   };
 
   const refreshOverlay = () => {
-    if (mode !== 'match' || !flow) return;
-    const key = `${flow.phase}:${flow.inningNumber}:${flow.shoeIndex}`;
+    if (mode !== 'match' || !view) return;
+    const v = view;
+    const key = `${v.phase}:${v.inningNumber}:${v.shoeIndex}`;
     if (key === shownPhase) return;
     const prev = shownPhase;
     shownPhase = key;
-    const f = flow;
-    if (f.phase === 'handoff') showHandoff(f, !prev.startsWith('handoff') && f.shoeIndex === 0, () => f.acceptHandoff());
-    else if (f.phase === 'inning') {
-      showInning(f, () => f.nextInning());
-      reactToInning(f);
-    } else if (f.phase === 'over') {
-      writeJson(SAVE_KEY, null);
-      for (const p of [0, 1] as Player[]) {
-        const c = f.character(p);
-        if (!c) continue;
-        say(c, f.state.winner === p ? 'win' : 'lose');
-        if (c.id === 'rookie') writeJson(ROOKIE_KEY, (readJson<number>(ROOKIE_KEY) ?? 0) + 1);
+    if (v.phase === 'handoff') showHandoff(v, !prev.startsWith('handoff') && v.shoeIndex === 0, () => v.acceptHandoff());
+    else if (v.phase === 'inning') {
+      showInning(v, () => v.nextInning());
+      if (flow) reactToInning(flow);
+    } else if (v.phase === 'over') {
+      if (flow && !online) {
+        writeJson(SAVE_KEY, null);
+        for (const p of [0, 1] as Player[]) {
+          const c = flow.character(p);
+          if (!c) continue;
+          say(c, flow.state.winner === p ? 'win' : 'lose');
+          if (c.id === 'rookie') writeJson(ROOKIE_KEY, (readJson<number>(ROOKIE_KEY) ?? 0) + 1);
+        }
       }
-      showGameOver(f, { menu: goMenu, rematch: () => toss(f.setup) });
+      const f = flow;
+      if (online?.role === 'guest') showGameOver(v, { menu: goMenu, rematch: null, waiting: `${v.name(0)} can start a rematch.` });
+      else if (online?.role === 'host') showGameOver(v, { menu: goMenu, rematch: online.link?.connected ? rematchOnline : null });
+      else showGameOver(v, { menu: goMenu, rematch: () => f && toss(f.setup) });
     } else hideOverlay();
   };
 
   function refresh() {
     const p = ctl.phase;
-    const npcTurn = !!(mode === 'match' && flow?.character(flow.pitcher));
+    // Once a shoe is in the air the hint has done its job (an online guest's throws arrive this way).
+    if (p === 'flight') hint.classList.add('hidden');
+    // Someone else is pitching: the computer, or a friend online.
+    const npcTurn = !!(mode === 'match' && view && !view.controlledHere(view.pitcher));
     swing.enabled = mode !== 'menu' && p === 'aim' && !npcTurn;
     rig.setAim(ctl.stance, ctl.target, ctl.line);
     if (!stage.closeCall.active) {
-      if (p === 'inning' && flow?.lastInning) frameBoard(flow.lastInning.number % 2 === 1 ? NEAR_STAKE : FAR_STAKE);
+      if (p === 'inning' && view?.lastInning) frameBoard(view.lastInning.number % 2 === 1 ? NEAR_STAKE : FAR_STAKE);
       else rig.go(p === 'flight' ? 'flight' : p === 'result' || p === 'over' ? 'pit' : 'aim');
     }
     stage.dusk.setTarget(duskTarget());
@@ -428,6 +469,8 @@ async function start() {
     refreshSet();
     refreshOverlay();
     driveNpc();
+    emoteBtn.hidden = !(online && mode === 'match');
+    if (emoteBtn.hidden) emotes.hidden = true;
   }
 
   const showToast = (r: ShoeResult) => {
@@ -477,6 +520,236 @@ async function start() {
     toast.classList.add('hidden');
     ctl.ready();
   };
+
+  // ── Online play ─────────────────────────────────────────────────────
+
+  const profile: OnlineProfile = readJson<OnlineProfile>(ONLINE_KEY) ?? { name: lastSetup.players[0].name, line: 'full', mode: 'cancellation' };
+  const netStatusEl = $('#netStatus');
+  const netStatus = (text: string | null) => {
+    netStatusEl.hidden = !text;
+    netStatusEl.textContent = text ?? '';
+  };
+  const emoteBtn = $<HTMLButtonElement>('#emote');
+  const emotes = $('#emotes');
+  for (const [id, text] of Object.entries(EMOTES) as [EmoteId, string][]) {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.addEventListener('click', () => {
+      emotes.hidden = true;
+      if (online?.role === 'host') online.link?.sendEmote(id);
+      else if (online?.role === 'guest') online.guest?.sendEmote(id);
+      bubble('You', text);
+    });
+    emotes.append(b);
+  }
+  emoteBtn.addEventListener('click', () => (emotes.hidden = !emotes.hidden));
+
+  const clearJoinParam = () => {
+    const q = new URLSearchParams(location.search);
+    if (!q.has('join')) return;
+    q.delete('join');
+    history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}`);
+  };
+
+  function openOnline() {
+    showOnline(profile, { host: hostOnline, join: (code) => askJoin(code), back: goMenu });
+  }
+
+  function leaveOnline() {
+    const o = online;
+    online = null;
+    netStatus(null);
+    emotes.hidden = true;
+    if (!o) return;
+    if (o.role === 'host') {
+      o.link?.close();
+      o.room.close();
+    } else {
+      o.leaving = true;
+      o.channel?.close();
+      o.leave();
+      // Back to this device's own physics and launch tuning.
+      session.judging = true;
+      session.rebuild(settings.sim);
+      applyLaunch(settings);
+      clearJoinParam();
+    }
+  }
+
+  async function hostOnline() {
+    writeJson(ONLINE_KEY, profile);
+    showStatus('Opening a room…', 'Getting a room code.');
+    try {
+      const room = await RoomHost.open();
+      online = { role: 'host', room, link: null, profile };
+      room.onGuest = onGuestArrived;
+      showRoom(room.code, room.link, { cancel: goMenu });
+    } catch (e) {
+      showStatus('Couldn’t open a room', message(e), [{ label: 'Back', run: openOnline, primary: true }]);
+    }
+  }
+
+  const hostHooks = (guestName: string) => ({
+    onChange: refresh,
+    onResult,
+    onSkip: () => {
+      if (stage.closeCall.active) endCloseCall();
+      finishResult();
+    },
+    onEmote: (id: EmoteId) => bubble(guestName, EMOTES[id]),
+    onGuestLost: () => netStatus(`${guestName}’s connection dropped. Waiting for them to come back…`),
+  });
+
+  function onGuestArrived(ch: Channel<GuestMessage, HostMessage>, hello: Extract<GuestMessage, { t: 'hello' }>) {
+    const o = online;
+    if (!o || o.role !== 'host') return ch.close();
+    if (o.link) {
+      // A friend coming back after a dropped connection (or a stranger with the link).
+      if (o.link.connected) ch.send({ t: 'reject', reason: 'This game already has two players.' });
+      else if (o.link.attach(ch, hello)) {
+        netStatus(null);
+        bubble(hello.name, 'I’m back.');
+      }
+      return;
+    }
+    if (hello.protocol !== PROTOCOL_VERSION || hello.build !== __BUILD__) {
+      ch.send({ t: 'reject', reason: 'You and the host are on different versions of the game. Reload both pages and try again.' });
+      return;
+    }
+    const setup: MatchSetup = {
+      mode: o.profile.mode,
+      players: [
+        { name: o.profile.name, line: o.profile.line },
+        { name: hello.name, line: hello.line, remote: true },
+      ],
+    };
+    const opening: Player = Math.random() < 0.5 ? 0 : 1;
+    startMatch(setup, opening, true);
+    o.link = new HostLink(flow!, { sim: settings.sim, launch: settings.launch }, __BUILD__, hostHooks(hello.name));
+    o.link.attach(ch, hello);
+    hideOverlay();
+    shownPhase = '';
+    refresh();
+    bubble('Coin toss', `${setup.players[opening].name} wins the toss and pitches first.`);
+  }
+
+  function rematchOnline() {
+    const o = online;
+    if (!o || o.role !== 'host' || !o.link || !flow) return;
+    const old = o.link;
+    const setup = flow.setup;
+    const opening: Player = Math.random() < 0.5 ? 0 : 1;
+    startMatch(setup, opening, true);
+    o.link = new HostLink(flow, { sim: settings.sim, launch: settings.launch }, __BUILD__, hostHooks(setup.players[1].name));
+    old.handOver(o.link);
+    shownPhase = '';
+    refresh();
+    bubble('Coin toss', `${setup.players[opening].name} wins the toss and pitches first.`);
+  }
+
+  function askJoin(code: string) {
+    showJoin(code, profile, {
+      join: () => connectGuest(code),
+      back: () => {
+        clearJoinParam();
+        goMenu();
+      },
+    });
+  }
+
+  async function connectGuest(code: string) {
+    writeJson(ONLINE_KEY, profile);
+    showStatus('Joining…', `Connecting to room ${code}.`);
+    try {
+      const { channel, leave } = await joinRoom(code);
+      online = { role: 'guest', code, profile, guest: null, channel, leave, leaving: false };
+      greetHost(channel);
+    } catch (e) {
+      showStatus('Couldn’t join', message(e), [
+        { label: 'Back', run: openOnline },
+        { label: 'Try again', run: () => connectGuest(code), primary: true },
+      ]);
+    }
+  }
+
+  function greetHost(channel: Channel<HostMessage, GuestMessage>) {
+    channel.onMessage = (m) => {
+      if (m.t === 'welcome') beginGuest(channel, m);
+      else if (m.t === 'reject') {
+        leaveOnline();
+        showStatus('Couldn’t join', m.reason, [{ label: 'Menu', run: goMenu, primary: true }]);
+      }
+    };
+    channel.onClose = guestLost;
+    channel.send({ t: 'hello', protocol: PROTOCOL_VERSION, build: __BUILD__, name: profile.name, line: profile.line });
+  }
+
+  function beginGuest(channel: Channel<HostMessage, GuestMessage>, m: Extract<HostMessage, { t: 'welcome' }>) {
+    const o = online;
+    if (!o || o.role !== 'guest') return;
+    channel.onClose = guestLost;
+    if (o.guest) {
+      // Reconnected mid-game: carry on from where the host is.
+      o.guest.rejoin(channel, m.match, m.pit);
+      netStatus(null);
+      return;
+    }
+    // Simulate with the host's physics and launch tuning so both sides see the same throws.
+    session.clear();
+    session.rebuild({ ...m.world.sim, clay: { ...m.world.sim.clay } });
+    applyLaunchValues(m.world.launch);
+    mode = 'match';
+    flow = null;
+    rakePits();
+    toast.classList.add('hidden');
+    const host = m.setup.players[m.you === 0 ? 1 : 0].name;
+    const guest = new GuestMatch(session, channel, m.you, m.setup, m.match, m.pit, {
+      onEmote: (id) => bubble(host, EMOTES[id]),
+      onBye: () => {
+        leaveOnline();
+        showStatus(`${host} left the game`, 'The match is over.', [{ label: 'Menu', run: goMenu, primary: true }]);
+      },
+      onWelcome: (next) => {
+        // Rematch: a fresh mirror for the new match.
+        if (online?.role === 'guest') online.guest = null;
+        beginGuest(channel, next);
+      },
+    });
+    o.guest = guest;
+    view = guest;
+    attach(guest);
+    hideOverlay();
+    shownPhase = '';
+    stage.dusk.setTarget(duskTarget(), true);
+    updateBoards(false);
+    refresh();
+    if (m.match.saved.state.innings.length === 0) hint.classList.remove('hidden');
+  }
+
+  /** The connection to the host dropped: keep trying to get back in for a minute. */
+  async function guestLost() {
+    const o = online;
+    if (!o || o.role !== 'guest' || o.leaving) return;
+    netStatus('Lost the connection. Reconnecting…');
+    for (let i = 0; i < 30; i++) {
+      await sleep(2000);
+      if (online !== o || o.leaving) return;
+      try {
+        const { channel, leave } = await joinRoom(o.code, 8000);
+        o.leave();
+        o.leave = leave;
+        o.channel = channel;
+        greetHost(channel);
+        return;
+      } catch {
+        // Try again.
+      }
+    }
+    if (online === o) {
+      leaveOnline();
+      showStatus('Lost the game', 'Couldn’t reconnect to the host.', [{ label: 'Menu', run: goMenu, primary: true }]);
+    }
+  }
 
   // ── Input ───────────────────────────────────────────────────────────
 
@@ -531,7 +804,7 @@ async function start() {
     toast.classList.add('hidden');
   });
   $('#menu').addEventListener('click', () => {
-    if (mode === 'match' && flow && flow.phase !== 'over') {
+    if (mode === 'match' && view && view.phase !== 'over') {
       const back = () => {
         shownPhase = '';
         hideOverlay();
@@ -543,6 +816,8 @@ async function start() {
 
   const gui = buildTuningPanel(settings, {
     rebuild: () => {
+      // Mid-game online, both sides must keep simulating the same world.
+      if (online) return;
       session.rebuild(settings.sim);
       if (flow) flow.restartInning();
       else if (ctl instanceof Practice) ctl.clearPit();
@@ -608,6 +883,12 @@ async function start() {
       get fps() {
         return Math.round(stage.fps);
       },
+      get room() {
+        return online?.role === 'host' ? online.room.code : null;
+      },
+      get scores() {
+        return view ? [...view.state.scores] : null;
+      },
       pitch(power = 1, aim = 0, release = 0) {
         swing.onThrow?.({ power, aim, release, wobble: 0, speedRatio: 1 });
       },
@@ -616,6 +897,9 @@ async function start() {
 
   goMenu();
   stage.dusk.setTarget(duskTarget(), true);
+  // Opened a friend's invite link.
+  const invite = new URLSearchParams(location.search).get('join');
+  if (invite) askJoin(normalizeCode(invite));
   requestAnimationFrame(frame);
   $('#loading').classList.add('done');
 }

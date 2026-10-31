@@ -378,6 +378,24 @@ export class PitSim {
     if (s.settled) s.delivered = true;
   }
 
+  /** Put a shoe at rest at a pose (online play: match where the host says it lies). */
+  placeAtRest(s: ShoeSim, pose: Pose) {
+    const b = s.body;
+    b.setTranslation(pose.position, false);
+    b.setRotation(pose.rotation, false);
+    b.setLinvel(v3(0, 0, 0), false);
+    b.setAngvel(v3(0, 0, 0), false);
+    if (!s.landed) {
+      s.landed = true;
+      b.setLinearDamping(this.params.clay.linearDamping);
+      b.setAngularDamping(this.params.clay.angularDamping);
+    }
+    b.sleep();
+    s.slowFor = SETTLE_TIME;
+    s.settled = true;
+    s.delivered = true;
+  }
+
   /** Has every shoe come to rest? */
   allSettled(): boolean {
     return this.shoes.every((s) => s.settled);

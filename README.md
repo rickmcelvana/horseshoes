@@ -29,6 +29,14 @@ The menu offers **Play a match** and **Practice**.
 
 Each has a bank of canned lines; Phase 5 adds an optional LLM voice on top.
 
+**Play a friend online (Phase 4).** Menu → **Play online** → **Host and get a link**, then send the link (or the five-letter room code) to a friend. When they open it and tap **Join**, the game starts. There's no game server: PeerJS's free public broker introduces the two browsers, then they talk directly.
+
+- Throws travel as inputs, not physics: each side simulates every throw itself, so flights look smooth on both screens.
+- The host is the referee. After each shoe the host sends where every shoe ended up, and the guest snaps to match; scores and rulings come only from the host. The guest borrows the host's physics and launch tuning for the game.
+- Both players must be on the same build (the page checks); if one of you just got an update, reload both.
+- 💬 sends quick-chat lines. If a guest's connection drops, they reconnect on their own for about a minute, or can reopen the link.
+- If a strict network blocks the direct connection, a TURN relay will be needed (not set up yet).
+
 **The court at dusk (Phase 2).** The sun sets as the game goes on: string lights come on mid-game, fireflies past the halfway mark, full dark at match point. The clay keeps every dent, scuff and imprint for the whole match. A chalkboard at each end keeps score in tally marks, with ringer innings underlined. When a shoe stops near the stake, the camera drops to the clay and a caliper or straightedge measures it, showing the same number the rules engine scored.
 
 ### Controls
@@ -55,11 +63,12 @@ npm run dev
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | Rules fixtures, physics (stake tunneling, determinism, perfect throws), full headless matches, architecture checks |
+| `npm test` | Rules fixtures, physics (stake tunneling, determinism, perfect throws), full headless matches, an online host and guest over an in-memory channel, architecture checks |
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Production build into `dist/` |
 | `npm run sim -- --n 500 --noise 1` | Headless throw simulator: outcome rates per grip for noisy throws |
 | `npm run calibrate` | Tunes each computer opponent's scatter to its target ringer rate with the real physics (`-- --check` just measures) |
+| `npm run smoke:online` | Starts a local PeerJS broker and plays an online inning between two browser pages, including quick chat and a guest reload |
 | `npm run smoke` | Loads a running build in headless Chromium, pitches in practice, plays one hot-seat inning, saves screenshots to `test-results/` |
 
 The smoke test needs a server running first, for example `npm run build && npx vite preview --port 4173`.
@@ -77,5 +86,6 @@ Textures in `public/textures` are CC0 from Poly Haven; see the credits file ther
 | `src/game` | Throw session, practice, hot-seat match flow, tuning panel |
 | `src/ui` | Menu and match cards |
 | `src/ai` | Computer opponents: roster, the throwing arm and its pressure model, canned lines |
+| `src/net` | Online play: protocol, host link, guest mirror, PeerJS rooms |
 | `src/audio` | Placeholder clang and thud |
 | `tools/` | Throw simulator and browser smoke test |

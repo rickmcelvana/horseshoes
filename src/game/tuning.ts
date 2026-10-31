@@ -58,9 +58,14 @@ export function saveSettings(s: Settings) {
 }
 
 export function applyLaunch(s: Settings) {
-  LAUNCH.aimHeight = s.launch.aimHeightIn * IN;
-  LAUNCH.aimShort = s.launch.aimShortIn * IN;
-  LAUNCH.releaseHeight = s.launch.releaseHeight;
+  applyLaunchValues(s.launch);
+}
+
+/** Launch tuning on its own (an online guest borrows the host's for the match). */
+export function applyLaunchValues(l: Settings['launch']) {
+  LAUNCH.aimHeight = l.aimHeightIn * IN;
+  LAUNCH.aimShort = l.aimShortIn * IN;
+  LAUNCH.releaseHeight = l.releaseHeight;
 }
 
 export function buildTuningPanel(s: Settings, hooks: { rebuild: () => void; changed: () => void; look: () => void }): GUI {

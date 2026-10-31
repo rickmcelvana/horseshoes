@@ -3,17 +3,16 @@
 import { IN, type Player } from '../rules';
 import type { FoulLine } from '../physics/throw';
 import { SHOE_COLORS } from '../render/shoeMesh';
-import { MODE_INFO, npcPlayer, type MatchFlow, type MatchSetup, type ModeKey, type SavedMatch } from '../game/matchFlow';
+import { MODE_INFO, npcPlayer, type MatchSetup, type MatchView, type ModeKey, type SavedMatch, type ShoeLabel } from '../game/matchFlow';
 import { CHARACTER_IDS, ROSTER, type CharacterId } from '../ai/roster';
-import type { ShoeResult } from '../game/session';
 
 const root = () => document.querySelector('#overlay') as HTMLElement;
 
 export const playerColor = (p: Player) => `#${SHOE_COLORS[p].toString(16).padStart(6, '0')}`;
 
-type Props<K extends keyof HTMLElementTagNameMap> = Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { class?: string; style?: string };
+export type Props<K extends keyof HTMLElementTagNameMap> = Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { class?: string; style?: string };
 
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, ...kids: (Node | string)[]) {
+export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, ...kids: (Node | string)[]) {
   const el = document.createElement(tag);
   const { class: cls, style, ...rest } = props;
   Object.assign(el, rest);
@@ -23,13 +22,13 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, 
   return el;
 }
 
-function button(label: string, onClick: () => void, primary = false) {
+export function button(label: string, onClick: () => void, primary = false) {
   const b = h('button', { textContent: label, class: primary ? 'primary' : '' });
   b.addEventListener('click', onClick);
   return b;
 }
 
-function show(card: HTMLElement, modal = true) {
+export function show(card: HTMLElement, modal = true) {
   const r = root();
   r.replaceChildren(card);
   r.className = modal ? 'modal' : 'banner';
@@ -46,11 +45,12 @@ const name = (p: Player, n: string) => h('span', { class: 'name', textContent: n
 
 // ── Menu ──────────────────────────────────────────────────────────────
 
-export function showMenu(opts: { saved: SavedMatch | null; practice: () => void; newMatch: () => void; resume: () => void }) {
+export function showMenu(opts: { saved: SavedMatch | null; practice: () => void; newMatch: () => void; resume: () => void; online: () => void }) {
   const kids: Node[] = [
     h('h1', { textContent: 'Dusk at the Pits' }),
     h('p', { class: 'sub', textContent: 'Backyard horseshoes by the official rules.' }),
     button('Play a match', opts.newMatch, true),
+    button('Play online', opts.online),
   ];
   if (opts.saved) {
     const s = opts.saved;
@@ -58,7 +58,7 @@ export function showMenu(opts: { saved: SavedMatch | null; practice: () => void;
     kids.push(button(`Resume: ${s.setup.players[0].name} ${a} – ${s.setup.players[1].name} ${b}`, opts.resume));
   }
   kids.push(button('Practice', opts.practice));
-  kids.push(h('p', { class: 'fine', textContent: 'Matches are hot-seat: two players pass one phone or share one computer.' }));
+  kids.push(h('p', { class: 'fine', textContent: 'Play on this device against a friend or the computer, or online with a friend on theirs.' }));
   show(h('div', { class: 'card menu' }, ...kids));
 }
 
@@ -159,16 +159,18 @@ export function showToss(setup: MatchSetup, winner: Player, choose: (first: Play
 
 // ── Handoff ───────────────────────────────────────────────────────────
 
-export function showHandoff(flow: MatchFlow, newEnd: boolean, ready: () => void) {
+export function showHandoff(flow: MatchView, newEnd: boolean, ready: () => void) {
   const p = flow.pitcher;
-  const npc = flow.character(p);
+  const elsewhere = !flow.controlledHere(p);
+  const computer = flow.character(p) !== null;
   const end = flow.target.leanDir.z > 0 ? 'the near stake' : 'the far stake';
   const lines: (Node | string)[] = [
     h('div', { class: 'eyebrow', textContent: `Inning ${flow.inningNumber} · pitching at ${end}` }),
-    h('h2', {}, name(p, flow.name(p)), npc ? ' is up' : '’s turn'),
+    h('h2', {}, name(p, flow.name(p)), elsewhere ? ' is up' : '’s turn'),
   ];
   if (newEnd && flow.inningNumber > 1) lines.push(h('p', { class: 'sub', textContent: 'Shoes picked up. Walk to the other end.' }));
-  if (!npc) {
+  if (elsewhere && !computer) lines.push(h('p', { class: 'sub', textContent: 'Waiting for them to pitch from their device…' }));
+  if (!elsewhere) {
     lines.push(h('p', { class: 'sub', textContent: 'Pick a grip and platform below, then pitch both shoes.' }));
     lines.push(h('div', { class: 'actions' }, button('Ready', ready, true)));
   }
@@ -177,17 +179,16 @@ export function showHandoff(flow: MatchFlow, newEnd: boolean, ready: () => void)
 
 // ── Inning summary ────────────────────────────────────────────────────
 
-function shoeLabel(r: ShoeResult, value: number): string {
-  if (r.foul) return 'foul';
-  const m = r.measure;
+function shoeLabel(m: ShoeLabel, value: number): string {
+  if (m.foul) return 'foul';
   const what = m.ringer ? 'ringer' : m.leaner ? 'leaner' : m.distance <= 6 * IN ? `${(m.distance / IN).toFixed(1)} in` : 'out';
   return value > 0 ? `${what} · ${value}` : what;
 }
 
-export function showInning(flow: MatchFlow, next: () => void) {
+export function showInning(flow: MatchView, next: () => void) {
   const inn = flow.lastInning!;
-  const chips = flow.thrown.map(({ player }, i) =>
-    h('span', { class: `chip${inn.score.shoeValues[i] > 0 ? ' scored' : ''}`, style: `--c:${playerColor(player)}`, textContent: shoeLabel(inn.results[i], inn.score.shoeValues[i]) }),
+  const chips = inn.shoes.map((s, i) =>
+    h('span', { class: `chip${inn.score.shoeValues[i] > 0 ? ' scored' : ''}`, style: `--c:${playerColor(s.player)}`, textContent: shoeLabel(s, inn.score.shoeValues[i]) }),
   );
   const [a, b] = flow.state.scores;
   const over = flow.state.winner !== null;
@@ -209,7 +210,7 @@ export function showInning(flow: MatchFlow, next: () => void) {
 
 // ── Game over ─────────────────────────────────────────────────────────
 
-export function showGameOver(flow: MatchFlow, opts: { rematch: () => void; menu: () => void }) {
+export function showGameOver(flow: MatchView, opts: { rematch: (() => void) | null; menu: () => void; waiting?: string }) {
   const w = flow.state.winner!;
   const l: Player = w === 0 ? 1 : 0;
   const s = flow.state.scores;
@@ -224,7 +225,8 @@ export function showGameOver(flow: MatchFlow, opts: { rematch: () => void; menu:
       h('div', { class: 'eyebrow', textContent: `${flow.state.innings.length} innings · ${st.shoes} shoes each` }),
       h('h1', {}, name(w, flow.name(w)), ` wins ${s[w]}–${s[l]}`),
       h('table', {}, h('thead', {}, h('tr', {}, h('th', { textContent: '' }), h('th', { textContent: 'Points' }), h('th', { textContent: 'Ringers' }))), h('tbody', {}, row(0), row(1))),
-      h('div', { class: 'actions' }, button('Menu', opts.menu), button('Rematch', opts.rematch, true)),
+      opts.waiting ? h('p', { class: 'sub', textContent: opts.waiting }) : '',
+      h('div', { class: 'actions' }, button('Menu', opts.menu), ...(opts.rematch ? [button('Rematch', opts.rematch, true)] : [])),
     ),
   );
 }
