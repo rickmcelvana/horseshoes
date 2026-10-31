@@ -105,6 +105,11 @@ export class Dusk {
   }
 
   /** Ease toward a new dusk level (or jump there). */
+  /** 0 in daylight, 1 once it's properly dark: lamps follow this. */
+  get night(): number {
+    return smooth(0.25, 0.75, this.t);
+  }
+
   setTarget(t: number, immediate = false) {
     this.target = t;
     if (immediate) this.apply(t);

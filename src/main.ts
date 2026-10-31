@@ -11,7 +11,7 @@ import { Practice, SET_SIZE, describeResult } from './game/practice';
 import { matchDusk, practiceDusk } from './game/duskProgress';
 import { MODE_INFO, MatchFlow, type MatchSetup, type SavedMatch } from './game/matchFlow';
 import { ThrowSession, type Controller, type ShoeResult } from './game/session';
-import { applyLaunch, buildTuningPanel, loadSettings, saveSettings } from './game/tuning';
+import { applyLaunch, buildTuningPanel, loadSettings, readout, saveSettings } from './game/tuning';
 import { clang, thud, unlockAudio } from './audio/sfx';
 import { confirmLeave, hideOverlay, playerColor, showGameOver, showHandoff, showInning, showMenu, showSetup, showToss } from './ui/overlay';
 
@@ -463,6 +463,8 @@ async function start() {
   });
   const fpsEl = $('#fps');
   fpsEl.hidden = !settings.look.showFps;
+  // Keep the frame-rate readout just above the controls, whatever height they wrap to.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--controls-h', `${$('#controls').offsetHeight}px`)).observe($('#controls'));
   stage.onQualityChange = (q) => console.info(`Quality stepped down to ${q.tier} to keep the frame rate up.`);
   if (!new URLSearchParams(location.search).has('tune')) gui.hide();
   $('#tune').addEventListener('click', () => (gui._hidden ? gui.show() : gui.hide()));
@@ -494,7 +496,8 @@ async function start() {
 
     rig.update(dt, ctl.phase === 'flight' ? flying : null);
     stage.render(dt, mode !== 'menu' && ctl.phase === 'aim' ? ctl.target : null);
-    if (settings.look.showFps) fpsEl.textContent = `${Math.round(stage.fps)} fps · ${stage.tier}`;
+    readout.frameRate = `${Math.round(stage.fps)} fps · ${stage.tier}`;
+    if (settings.look.showFps) fpsEl.textContent = readout.frameRate;
     requestAnimationFrame(frame);
   };
 

@@ -262,6 +262,13 @@ button:focus-visible {
 }
 
 #fps {
+  position: absolute;
+  left: 12px;
+  bottom: calc(var(--controls-h, 64px) + 6px);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--panel);
+  pointer-events: none;
   font-size: 12px;
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;

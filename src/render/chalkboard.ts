@@ -45,6 +45,9 @@ export class Chalkboard {
   private drawn: number[] = [];
   private anim = 1;
   private grain: HTMLCanvasElement;
+  private readonly slateMat: THREE.MeshStandardMaterial;
+  private readonly bulbMat = new THREE.MeshStandardMaterial({ color: 0xfff3dc, emissive: 0xffd9a0, emissiveIntensity: 0 });
+  private readonly lamp: THREE.SpotLight;
 
   constructor(stake: Stake, mats: Materials) {
     this.canvas.width = W;
@@ -55,7 +58,9 @@ export class Chalkboard {
     this.tex.anisotropy = 4;
     this.grain = makeGrain();
 
-    const slate = new THREE.Mesh(new THREE.PlaneGeometry(BOARD_W, BOARD_H), new THREE.MeshStandardMaterial({ map: this.tex, roughness: 0.95 }));
+    // The chalk glows faintly at night (the emissive map is the board itself), as if lit by the lamp.
+    this.slateMat = new THREE.MeshStandardMaterial({ map: this.tex, roughness: 0.95, emissive: 0xffffff, emissiveMap: this.tex, emissiveIntensity: 0 });
+    const slate = new THREE.Mesh(new THREE.PlaneGeometry(BOARD_W, BOARD_H), this.slateMat);
     slate.position.z = 0.026;
     const frameMat = tiledClone(mats.wood, 0.4, 0.2);
     const frame = new THREE.Mesh(new THREE.BoxGeometry(BOARD_W + 0.08, BOARD_H + 0.08, 0.05), frameMat);
@@ -64,12 +69,34 @@ export class Chalkboard {
     post.position.set(0, -(1.2 + BOARD_H / 2) / 2 + BOARD_H / 2 - 0.02, -0.07);
     post.castShadow = true;
     this.group.add(frame, slate, post);
+
+    // A little barn lamp on an arm over the board.
+    const metal = new THREE.MeshStandardMaterial({ color: 0x2b2e2a, metalness: 0.7, roughness: 0.45 });
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.32), metal);
+    arm.position.set(0, BOARD_H / 2 + 0.1, 0.13);
+    const shade = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.07, 18, 1, true), metal);
+    shade.position.set(0, BOARD_H / 2 + 0.07, 0.28);
+    shade.rotation.x = -0.5;
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 8), this.bulbMat);
+    bulb.position.set(0, BOARD_H / 2 + 0.05, 0.285);
+    this.lamp = new THREE.SpotLight(0xffd9a0, 0, 2.2, 0.9, 0.6, 1.5);
+    this.lamp.position.copy(bulb.position);
+    this.lamp.target.position.set(0, -0.05, 0.03);
+    this.group.add(arm, shade, bulb, this.lamp, this.lamp.target);
     const { position, facing } = boardPlacement(stake);
     this.group.position.copy(position);
     // Face the pitcher at the far end, angled a little toward the court's center.
     this.group.rotation.y = facing > 0 ? -0.35 : Math.PI + 0.35;
     this.redraw();
     document.fonts?.load('600 60px Caveat').then(() => this.redraw());
+  }
+
+  /** Light the board as it gets dark. `realLight` adds an actual spotlight (skipped on low quality). */
+  setNight(n: number, realLight: boolean) {
+    this.slateMat.emissiveIntensity = 0.35 * n;
+    this.bulbMat.emissiveIntensity = 4 * n;
+    this.lamp.visible = realLight;
+    this.lamp.intensity = 2.5 * n;
   }
 
   /** Show a new state. Chunks that weren't on the board before are chalked in. */

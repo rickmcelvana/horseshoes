@@ -145,6 +145,7 @@ export class Stage {
       }
     }
     this.dusk.update(dt);
+    for (const b of this.boards) b.setNight(this.dusk.night, this.quality.tier !== 'low');
     for (const p of this.pits) p.flush();
     for (const b of this.boards) b.update(dt);
 
