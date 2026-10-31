@@ -1,7 +1,7 @@
 // A throw session: the pit simulation plus the bookkeeping every mode needs,
 // namely waiting for a pitched shoe to settle, judging it, and pulling foul shoes.
 
-import { IN_COUNT_DISTANCE, measureShoe, type Player, type ShoeMeasure, type Stake } from '../rules';
+import { IN_COUNT_DISTANCE, bareMeasure, measureShoe, type Player, type Pose, type ShoeMeasure, type Stake } from '../rules';
 import { PitSim, type ShoeSim, type SimParams } from '../physics/sim';
 import type { FoulLine, Grip, Stance, ThrowInput } from '../physics/throw';
 import type { SwingResult } from '../input/swing';
@@ -17,8 +17,8 @@ export interface ShoeResult {
 export class ThrowSession {
   sim: PitSim;
   onSettled: ((r: ShoeResult) => void) | null = null;
-  /** A shoe left the pit (foul, or cleared), so the renderer can drop its mesh. */
-  onRemoved: ((s: ShoeSim) => void) | null = null;
+  /** A shoe left the pit (foul, or picked up), with where it lay, so the renderer can drop its mesh and mark the clay. */
+  onRemoved: ((s: ShoeSim, lastPose: Pose) => void) | null = null;
   /** Shoes judged foul during this session, even after they've been pulled. */
   readonly fouls = new Set<ShoeSim>();
   private pending: ShoeSim | null = null;
@@ -72,8 +72,9 @@ export class ThrowSession {
 
   remove(shoe: ShoeSim) {
     if (!this.sim.shoes.includes(shoe)) return;
+    const pose = this.sim.pose(shoe);
     this.sim.removeShoe(shoe);
-    this.onRemoved?.(shoe);
+    this.onRemoved?.(shoe, pose);
   }
 
   /** Pick up every shoe. */
@@ -93,7 +94,7 @@ export class ThrowSession {
   }
 }
 
-const FOUL_MEASURE: ShoeMeasure = { ringer: false, distance: Infinity, touching: false, leaner: false };
+const FOUL_MEASURE: ShoeMeasure = bareMeasure({ ringer: false, distance: Infinity, touching: false, leaner: false });
 
 /** What the shell needs from a game mode (practice or a match). */
 export type Phase = 'aim' | 'flight' | 'result' | 'handoff' | 'inning' | 'over';

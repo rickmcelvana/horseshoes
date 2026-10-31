@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IN } from './court';
+import { bareMeasure } from './measure';
 import { type PitchedShoe, type Player, type ScoringOptions, scoreCancellation, scoreCountAll } from './scoring';
 
 const NHPA: ScoringOptions = { leanerValue: 1 };
@@ -12,7 +13,7 @@ function shoe(player: Player, at: number | 'R', extra: { foul?: boolean; leaner?
   return {
     player,
     foul: extra.foul ?? false,
-    measure: { ringer, distance, touching: distance === 0, leaner: extra.leaner ?? false },
+    measure: bareMeasure({ ringer, distance, touching: distance === 0, leaner: extra.leaner ?? false }),
   };
 }
 

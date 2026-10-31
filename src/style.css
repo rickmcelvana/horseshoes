@@ -240,6 +240,33 @@ button:focus-visible {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
+#measure {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--panel-strong);
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  color: var(--great);
+  transition: opacity 0.2s;
+}
+#measure[data-good='false'] {
+  color: var(--bad);
+}
+#measure.hidden {
+  opacity: 0;
+}
+
+#fps {
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 #loading {
   position: absolute;
   inset: 0;

@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { COURT, NEAR_STAKE, type Stake, type Vec3 } from '../rules';
 import { LAUNCH, type FoulLine, type Stance } from '../physics/throw';
 
-export type Shot = 'aim' | 'flight' | 'pit';
+export type Shot = 'aim' | 'flight' | 'pit' | 'custom';
 
 export class CameraRig {
   readonly camera = new THREE.PerspectiveCamera(24, 1, 0.05, 200);
@@ -17,6 +17,7 @@ export class CameraRig {
   private stance: Stance = 'right';
   private target: Stake = NEAR_STAKE;
   private releaseDist = 11.3;
+  private customRate = 3;
 
   constructor() {
     this.aimTargets();
@@ -33,6 +34,18 @@ export class CameraRig {
 
   go(shot: Shot) {
     this.shot = shot;
+  }
+
+  /** Frame something specific (close-call cam, chalkboard). */
+  frame(pos: THREE.Vector3, look: THREE.Vector3, rate = 3) {
+    this.shot = 'custom';
+    this.wantPos.copy(pos);
+    this.wantLook.copy(look);
+    this.customRate = rate;
+  }
+
+  get current(): Shot {
+    return this.shot;
   }
 
   resize(w: number, h: number) {
@@ -89,6 +102,8 @@ export class CameraRig {
       this.pitPos(this.wantPos);
       this.stakeLook(this.wantLook);
       rate = 2.5;
+    } else if (this.shot === 'custom') {
+      rate = this.customRate;
     }
     const k = 1 - Math.exp(-rate * dt);
     this.pos.lerp(this.wantPos, k);

@@ -25,6 +25,8 @@ export class Practice implements Controller {
   /** Shoes pitched this set, in throw order (fouls included until pulled). */
   set: ShoeSim[] = [];
   stats: PracticeStats = { thrown: 0, ringers: 0, inCount: 0, fouls: 0 };
+  /** Every shoe's outcome in order, for the chalkboard. */
+  history: ('ringer' | 'count' | 'out' | 'foul')[] = [];
   onResult: ((r: ShoeResult) => void) | null = null;
   onChange: (() => void) | null = null;
 
@@ -61,6 +63,7 @@ export class Practice implements Controller {
     if (r.foul) this.stats.fouls++;
     else if (r.measure.ringer) this.stats.ringers++;
     else if (r.inCount) this.stats.inCount++;
+    this.history.push(r.foul ? 'foul' : r.measure.ringer ? 'ringer' : r.inCount ? 'count' : 'out');
     this.phase = 'result';
     this.onResult?.(r);
   }

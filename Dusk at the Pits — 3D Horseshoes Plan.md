@@ -2,7 +2,7 @@
 
 Oct 30, 2026 · @Rick · revised Oct 31, 2026
 
-**Status:** Phase 0 passed its gate: Rick and a friend found throwing feels good on PC and smooth on a phone. Phase 1 (hot-seat matches) is built and deployed for playtesting.
+**Status:** Phases 0 and 1 passed playtesting (throwing feels good on PC and phone; a full hot-seat game played cleanly). Phase 2 (the court at dusk) is built and deployed for playtesting.
 
 ## Vision
 
@@ -112,8 +112,8 @@ Mouse and touch both work, so phones are in from day one.
 
 - **Renderer:** Three.js `MeshStandardMaterial` / `MeshPhysicalMaterial`, AgX tone mapping, soft shadows from a single sun.
 - **Assets:** CC0 sources only (Poly Haven, ambientCG) for HDRIs, clay, grass, wood and weathered steel textures, so there's nothing to license. The shoe and stake are simple enough to model directly.
-- **Dusk cycle:** a procedural sky (Three.js `Sky`) driven by sun elevation, with the environment map re-baked through PMREM only when the score changes, not every frame. String lights and fireflies fade in on top.
-- **Persistent clay:** the pit surface carries a height map and normal map that each landing stamps into. Cheap, it survives the whole match, and it looks right under PBR lighting.
+- **Dusk cycle:** a procedural sky (Three.js `Sky`) driven by sun elevation, with the environment map re-baked through PMREM only while the light is changing, not every frame. String lights, pit floodlights and fireflies fade in on top. Full dark arrives a few points before the limit so match point is played under the lights.
+- **Persistent clay:** the pit surface carries a small height field that each landing, skid and pickup stamps into; a shader turns it into dents, rims and darker freshly turned clay. It survives the whole match. The marks are visual only: physics still sees a flat pit.
 - **Quality tiers:** auto-picked on load and adjustable: shadow map size, pixel-ratio cap, post-processing (bloom for string lights, depth of field for the close-call cam) on or off. Target 60 fps on desktop and 30+ fps on a mid-range phone.
 
 ## AI opponent
@@ -191,7 +191,7 @@ The player, the NPC and a remote friend all produce the same kind of throw input
 | --- | --- |
 | `src/rules` | Scoring, ringer test, game modes, turn order; no 3D imports |
 | `src/physics` | Rapier world, shoe collider, clay behavior, settle detection; no render imports |
-| `src/render` | Scene, lighting and dusk cycle, cameras, chalkboard, effects, quality tiers |
+| `src/render` | Stage (renderer, bloom, quality tiers), dusk cycle, court and props, clay marks, chalkboards, close-call cam, cameras |
 | `src/input` | Swing gesture for mouse and touch, grip picker |
 | `src/game` | Throw session, practice, inning state machine and match flow, tuning panel |
 | `src/ui` | Menu and match cards: setup, coin toss, handoff, inning summary, game over |
