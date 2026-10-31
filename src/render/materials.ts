@@ -13,9 +13,13 @@ export interface Materials {
 }
 
 const loader = new THREE.TextureLoader();
+/** Clones made with different tiling, which need re-uploading once the shared image arrives. */
+const clones = new WeakMap<THREE.Texture, THREE.Texture[]>();
 
 function load(name: string, srgb: boolean, repeat: [number, number], anisotropy: number): THREE.Texture {
-  const t = loader.load(`${import.meta.env.BASE_URL}textures/${name}.jpg`);
+  const t = loader.load(`${import.meta.env.BASE_URL}textures/${name}.jpg`, (tex) => {
+    for (const c of clones.get(tex) ?? []) c.needsUpdate = true;
+  });
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(...repeat);
   t.anisotropy = anisotropy;
@@ -58,7 +62,8 @@ export function tiledClone(m: THREE.MeshStandardMaterial, u: number, v: number):
     if (t) {
       const tc = t.clone();
       tc.repeat.set(u, v);
-      tc.needsUpdate = true;
+      if (t.image) tc.needsUpdate = true;
+      else clones.set(t, [...(clones.get(t) ?? []), tc]);
       c[key] = tc;
     }
   }

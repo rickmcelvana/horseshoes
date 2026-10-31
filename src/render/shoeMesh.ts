@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SHOE, barPolygon, shoeOutline } from '../rules';
 
 export const SHOE_COLORS = [0xc8452d, 0x2d6ec8] as const;
@@ -20,9 +21,9 @@ function barGeometry(): THREE.BufferGeometry {
   });
   g.rotateX(-Math.PI / 2);
   g.translate(0, -SHOE.barThickness / 2, 0);
-  g.computeVertexNormals();
-  geometry = g;
-  return g;
+  // Smooth around the curve of the bar, but keep its top and side edges crisp.
+  geometry = toCreasedNormals(g, Math.PI / 5);
+  return geometry;
 }
 
 export function createShoeMesh(owner: 0 | 1): THREE.Group {

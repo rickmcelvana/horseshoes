@@ -8,11 +8,15 @@ import { IN, SHOE, type ShoeMeasure, type Vec3 } from '../rules';
 /** Shoes this close get measured on camera. */
 export const CLOSE_CALL_DISTANCE = 3 * IN;
 
+/** Ringers whose straightedge clears by less than this get measured too. */
+export const CLOSE_RINGER_CLEARANCE = 1.5 * IN;
+
 export type CloseCallKind = 'gap' | 'straightedge';
 
 export function closeCallKind(m: ShoeMeasure, foul: boolean): CloseCallKind | null {
   if (foul) return null;
-  if (m.straightedge.encircles) return 'straightedge';
+  // A ringer that sits deep around the stake isn't a close call; one that barely clears is.
+  if (m.straightedge.encircles) return m.straightedge.clearance < CLOSE_RINGER_CLEARANCE ? 'straightedge' : null;
   if (m.distance <= CLOSE_CALL_DISTANCE) return 'gap';
   return null;
 }
@@ -42,7 +46,7 @@ export class CloseCall {
   private kind: CloseCallKind = 'gap';
   private t = 0;
   private readonly brass = new THREE.MeshStandardMaterial({ color: 0xd8b25a, metalness: 1, roughness: 0.3 });
-  private readonly rule = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6 });
+  private readonly rule = new THREE.MeshStandardMaterial({ color: 0x8d9196, metalness: 1, roughness: 0.38 });
   private readonly beam: THREE.Mesh;
   private readonly jawA: THREE.Mesh;
   private readonly jawB: THREE.Mesh;
