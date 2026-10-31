@@ -1,8 +1,8 @@
 name: Test and deploy
 
 # Every push runs the checks, then publishes to GitHub Pages:
-#   main            → https://<owner>.github.io/<repo>/
-#   any other branch → https://<owner>.github.io/<repo>/preview/<branch>/
+#   default branch   → https://<owner>.github.io/<repo>/
+#   any other branch → https://<owner>.github.io/<repo>/preview/<branch>/ (slashes become dashes)
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
       - run: npm test
       - name: Build
         run: |
-          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=""; else dir="preview/${GITHUB_REF_NAME//\//-}"; fi
+          if [ "$GITHUB_REF_NAME" = "${{ github.event.repository.default_branch }}" ]; then dir=""; else dir="preview/${GITHUB_REF_NAME//\//-}"; fi
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
           BASE_PATH="/${{ github.event.repository.name }}/${dir:+$dir/}" npm run build
         id: build

@@ -225,7 +225,7 @@ Cloud works well for this project: it's a static web game with no native depende
 
 1. The `horseshoes` repo is attached to the cloud coding session.
 2. Claude writes code, runs the unit tests, headless physics scripts and a production build in the cloud, and pushes to a branch.
-3. A GitHub Actions workflow runs the same checks, then deploys: `main` to the site root and each branch to `/preview/<branch>/` on the Pages site. (GitHub Pages hosts one site per repo, so per-branch previews are subfolders, with Vite's `base` set per build.)
+3. A GitHub Actions workflow runs the same checks, then deploys: the default branch (`master`) to the site root and each branch to `/preview/<branch>/` on the Pages site. (GitHub Pages hosts one site per repo, so per-branch previews are subfolders, with Vite's `base` set per build.)
 4. You play the result on any device — PC, phone, or your friend's laptop — and leave feedback.
 
 Claude can also load the game in headless Chromium in the cloud to catch a blank screen or a console error and take screenshots, which covers crashes and layout, but not feel.

@@ -2,7 +2,7 @@
 
 A browser-based 3D horseshoes game played by NHPA rules. See the [plan](./Dusk%20at%20the%20Pits%20—%203D%20Horseshoes%20Plan.md) for the vision and roadmap.
 
-**Play:** every push deploys to GitHub Pages. `main` is at `https://rickmcelvana.github.io/horseshoes/`, and other branches at `…/horseshoes/preview/<branch-name-with-slashes-as-dashes>/`.
+**Play:** every push deploys to GitHub Pages. `master` is at `https://rickmcelvana.github.io/horseshoes/`, and other branches at `…/horseshoes/preview/<branch-name-with-slashes-as-dashes>/`.
 
 ## Phase 0: practice
 
