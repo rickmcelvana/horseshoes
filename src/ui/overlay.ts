@@ -10,9 +10,9 @@ const root = () => document.querySelector('#overlay') as HTMLElement;
 
 export const playerColor = (p: Player) => `#${SHOE_COLORS[p].toString(16).padStart(6, '0')}`;
 
-type Props<K extends keyof HTMLElementTagNameMap> = Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { class?: string; style?: string };
+export type Props<K extends keyof HTMLElementTagNameMap> = Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { class?: string; style?: string };
 
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, ...kids: (Node | string)[]) {
+export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, ...kids: (Node | string)[]) {
   const el = document.createElement(tag);
   const { class: cls, style, ...rest } = props;
   Object.assign(el, rest);
@@ -22,13 +22,13 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, 
   return el;
 }
 
-function button(label: string, onClick: () => void, primary = false) {
+export function button(label: string, onClick: () => void, primary = false) {
   const b = h('button', { textContent: label, class: primary ? 'primary' : '' });
   b.addEventListener('click', onClick);
   return b;
 }
 
-function show(card: HTMLElement, modal = true) {
+export function show(card: HTMLElement, modal = true) {
   const r = root();
   r.replaceChildren(card);
   r.className = modal ? 'modal' : 'banner';
@@ -45,11 +45,12 @@ const name = (p: Player, n: string) => h('span', { class: 'name', textContent: n
 
 // ── Menu ──────────────────────────────────────────────────────────────
 
-export function showMenu(opts: { saved: SavedMatch | null; practice: () => void; newMatch: () => void; resume: () => void }) {
+export function showMenu(opts: { saved: SavedMatch | null; practice: () => void; newMatch: () => void; resume: () => void; online: () => void }) {
   const kids: Node[] = [
     h('h1', { textContent: 'Dusk at the Pits' }),
     h('p', { class: 'sub', textContent: 'Backyard horseshoes by the official rules.' }),
     button('Play a match', opts.newMatch, true),
+    button('Play online', opts.online),
   ];
   if (opts.saved) {
     const s = opts.saved;
@@ -57,7 +58,7 @@ export function showMenu(opts: { saved: SavedMatch | null; practice: () => void;
     kids.push(button(`Resume: ${s.setup.players[0].name} ${a} – ${s.setup.players[1].name} ${b}`, opts.resume));
   }
   kids.push(button('Practice', opts.practice));
-  kids.push(h('p', { class: 'fine', textContent: 'Matches are hot-seat: two players pass one phone or share one computer.' }));
+  kids.push(h('p', { class: 'fine', textContent: 'Play on this device against a friend or the computer, or online with a friend on theirs.' }));
   show(h('div', { class: 'card menu' }, ...kids));
 }
 
@@ -209,7 +210,7 @@ export function showInning(flow: MatchView, next: () => void) {
 
 // ── Game over ─────────────────────────────────────────────────────────
 
-export function showGameOver(flow: MatchView, opts: { rematch: () => void; menu: () => void }) {
+export function showGameOver(flow: MatchView, opts: { rematch: (() => void) | null; menu: () => void; waiting?: string }) {
   const w = flow.state.winner!;
   const l: Player = w === 0 ? 1 : 0;
   const s = flow.state.scores;
@@ -224,7 +225,8 @@ export function showGameOver(flow: MatchView, opts: { rematch: () => void; menu:
       h('div', { class: 'eyebrow', textContent: `${flow.state.innings.length} innings · ${st.shoes} shoes each` }),
       h('h1', {}, name(w, flow.name(w)), ` wins ${s[w]}–${s[l]}`),
       h('table', {}, h('thead', {}, h('tr', {}, h('th', { textContent: '' }), h('th', { textContent: 'Points' }), h('th', { textContent: 'Ringers' }))), h('tbody', {}, row(0), row(1))),
-      h('div', { class: 'actions' }, button('Menu', opts.menu), button('Rematch', opts.rematch, true)),
+      opts.waiting ? h('p', { class: 'sub', textContent: opts.waiting }) : '',
+      h('div', { class: 'actions' }, button('Menu', opts.menu), ...(opts.rematch ? [button('Rematch', opts.rematch, true)] : [])),
     ),
   );
 }

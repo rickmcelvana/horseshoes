@@ -6,7 +6,7 @@
 
 import { FAR_STAKE, NEAR_STAKE, type Player, type Pose, type ShoeMeasure, type Stake } from '../rules';
 import type { SimParams } from '../physics/sim';
-import type { Grip, Stance, ThrowInput } from '../physics/throw';
+import type { FoulLine, Grip, Stance, ThrowInput } from '../physics/throw';
 import type { SwingResult } from '../input/swing';
 import type { Phase } from '../game/session';
 import type { InningSummary, MatchSetup, SavedMatch } from '../game/matchFlow';
@@ -57,7 +57,7 @@ export const EMOTES: Record<EmoteId, string> = {
 };
 
 export type GuestMessage =
-  | { t: 'hello'; protocol: number; build: string; name: string }
+  | { t: 'hello'; protocol: number; build: string; name: string; line: FoulLine }
   | { t: 'swing'; swing: SwingResult; grip: Grip; stance: Stance }
   /** Guest is ready to pitch (accepts the handoff). */
   | { t: 'ready' }

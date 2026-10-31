@@ -16,6 +16,8 @@ export interface GuestHooks {
   onEmote?: (id: EmoteId) => void;
   /** The host ended the match. */
   onBye?: () => void;
+  /** The host started a new match (rematch) over this connection. */
+  onWelcome?: (m: Extract<HostMessage, { t: 'welcome' }>) => void;
 }
 
 export class GuestMatch implements Controller, MatchView {
@@ -188,6 +190,9 @@ export class GuestMatch implements Controller, MatchView {
         break;
       case 'bye':
         this.hooks.onBye?.();
+        break;
+      case 'welcome':
+        this.hooks.onWelcome?.(m);
         break;
       default:
         break;

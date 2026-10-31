@@ -11,7 +11,8 @@
     "test": "vitest run",
     "sim": "tsx tools/sim-throws.ts",
     "smoke": "node tools/smoke.mjs",
-    "calibrate": "tsx tools/calibrate.ts"
+    "calibrate": "tsx tools/calibrate.ts",
+    "smoke:online": "node tools/online-smoke.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-deterministic-compat": "0.21.0",

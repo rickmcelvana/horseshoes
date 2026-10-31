@@ -41,14 +41,14 @@ function connect() {
 describe('online play over a loopback channel', () => {
   it('turns away a guest on a different build', () => {
     const c = connect();
-    expect(c.link.attach(c.pipe.a, { t: 'hello', protocol: PROTOCOL_VERSION, build: 'other', name: 'Dale' })).toBe(false);
+    expect(c.link.attach(c.pipe.a, { t: 'hello', protocol: PROTOCOL_VERSION, build: 'other', name: 'Dale', line: 'full' })).toBe(false);
     c.pipe.flush();
     expect(c.rejected()).toMatch(/different versions/);
   });
 
   it('host and guest play two innings and agree on every shoe and the score', () => {
     const c = connect();
-    expect(c.link.attach(c.pipe.a, { t: 'hello', protocol: PROTOCOL_VERSION, build: 'test', name: 'Dale' })).toBe(true);
+    expect(c.link.attach(c.pipe.a, { t: 'hello', protocol: PROTOCOL_VERSION, build: 'test', name: 'Dale', line: 'full' })).toBe(true);
     c.pipe.flush();
     const guest = c.guest()!;
     expect(guest).not.toBeNull();

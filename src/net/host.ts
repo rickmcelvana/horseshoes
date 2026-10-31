@@ -59,6 +59,12 @@ export class HostLink {
       channel.send({ t: 'reject', reason: 'You and the host are on different versions of the game. Reload both pages and try again.' });
       return false;
     }
+    this.adopt(channel);
+    return true;
+  }
+
+  /** Start talking over a connection that has already said hello (a reconnect, or a rematch). */
+  adopt(channel: Channel<GuestMessage, HostMessage>) {
     this.channel = channel;
     channel.onMessage = (m) => this.receive(m);
     channel.onClose = () => {
@@ -67,7 +73,13 @@ export class HostLink {
       this.hooks.onGuestLost?.();
     };
     channel.send({ t: 'welcome', you: this.guest, setup: this.flow.setup, world: this.world, match: this.matchSnapshot(), pit: this.pit() });
-    return true;
+  }
+
+  /** Hand the guest's connection to the link for a new match (rematch). */
+  handOver(next: HostLink) {
+    const ch = this.channel;
+    this.channel = null;
+    if (ch) next.adopt(ch);
   }
 
   sendEmote(id: EmoteId) {
