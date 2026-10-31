@@ -37,7 +37,7 @@ export class Stage {
   private readonly bloom: UnrealBloomPass;
   private readonly monitor = new FrameMonitor(targetFps());
   private readonly inset = new THREE.PerspectiveCamera(5, 4 / 3, 0.5, 60);
-  private court: THREE.Group;
+  private readonly court: THREE.Group;
   private auto: boolean;
 
   constructor(
@@ -55,7 +55,7 @@ export class Stage {
 
     this.mats = createMaterials(this.quality.anisotropy);
     this.dusk = new Dusk(this.scene, this.renderer, this.quality);
-    this.court = buildCourt(this.mats, this.quality.trees);
+    this.court = buildCourt(this.mats);
     this.pits = [new ClayPit(NEAR_STAKE, this.mats.clay), new ClayPit(FAR_STAKE, this.mats.clay)];
     this.boards = [new Chalkboard(NEAR_STAKE, this.mats), new Chalkboard(FAR_STAKE, this.mats)];
     this.closeCall = new CloseCall(measureLabel);
@@ -97,9 +97,6 @@ export class Stage {
     this.composer.setPixelRatio(Math.min(window.devicePixelRatio, q.maxPixelRatio));
     this.bloom.enabled = q.bloom;
     this.dusk.applyQuality(q);
-    this.scene.remove(this.court);
-    this.court = buildCourt(this.mats, q.trees);
-    this.scene.add(this.court);
     this.resize();
   }
 
