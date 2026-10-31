@@ -22,6 +22,9 @@ import type { ShoeSim } from '../physics/sim';
 import type { FoulLine, Grip, Stance } from '../physics/throw';
 import type { SwingResult } from '../input/swing';
 import type { Controller, Phase, ShoeResult, ThrowSession } from './session';
+import { ROSTER, type Character, type CharacterId } from '../ai/roster';
+import type { Situation } from '../ai/arm';
+import { matchDusk } from './duskProgress';
 
 export type ModeKey = keyof typeof MODES;
 
@@ -34,6 +37,14 @@ export const MODE_INFO: Record<ModeKey, { label: string; blurb: string }> = {
 export interface PlayerSetup {
   name: string;
   line: FoulLine;
+  /** A computer opponent plays this side. */
+  npc?: CharacterId;
+}
+
+/** Setup for a side played by a character: their name and their foul line. */
+export function npcPlayer(id: CharacterId): PlayerSetup {
+  const c = ROSTER[id];
+  return { name: c.name, line: c.line, npc: id };
 }
 
 export interface MatchSetup {
@@ -79,6 +90,12 @@ export class MatchFlow implements Controller {
   ) {
     if (typeof opening === 'number') {
       this.state = newMatch(MODES[setup.mode], opening);
+      setup.players.forEach((p, i) => {
+        if (p.npc) {
+          this.grips[i] = ROSTER[p.npc].grip;
+          this.stances[i] = ROSTER[p.npc].stance;
+        }
+      });
     } else {
       this.state = opening.state;
       this.grips = [...opening.grips];
@@ -140,6 +157,27 @@ export class MatchFlow implements Controller {
 
   name(p: Player): string {
     return this.setup.players[p].name;
+  }
+
+  /** The character playing this side, if it's a computer opponent. */
+  character(p: Player): Character | null {
+    const id = this.setup.players[p].npc;
+    return id ? ROSTER[id] : null;
+  }
+
+  /** What's at stake for this player right now, for the NPC's pressure model. */
+  situation(p: Player): Situation {
+    const o: Player = p === 0 ? 1 : 0;
+    const ringers: [number, number] = [0, 0];
+    for (const { shoe, player } of this.thrown) {
+      if (this.session.sim.shoes.includes(shoe) && !this.session.isFoulNow(shoe) && this.session.measure(shoe).ringer) ringers[player]++;
+    }
+    return {
+      myScore: this.state.scores[p],
+      oppScore: this.state.scores[o],
+      progress: matchDusk(this.state),
+      mustAnswerRinger: this.state.config.scoring === 'cancellation' && ringers[o] > ringers[p],
+    };
   }
 
   shoesInPit(): ShoeSim[] {

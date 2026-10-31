@@ -2,7 +2,7 @@
 
 Oct 30, 2026 · @Rick · revised Oct 31, 2026
 
-**Status:** Phases 0 and 1 passed playtesting (throwing feels good on PC and phone; a full hot-seat game played cleanly). Phase 2 (the court at dusk) is built and deployed for playtesting.
+**Status:** Phases 0–2 passed playtesting. Phase 3 (computer opponents) is built and deployed for playtesting; all four characters are calibrated within 1–2 points of their target ringer rates.
 
 ## Vision
 
@@ -144,7 +144,7 @@ The opponent is split in two: a classic NPC **arm** that throws, and an optional
 | Uncle Dale | 1¾ turn | ~35% | Purist, insufferable after a double |
 | The Professor | 1¼ turn | ~50% | Narrates physics and probability; overthinks under pressure |
 
-Ringer percentages are design targets for difficulty tiers, tuned in playtesting.
+Ringer percentages are design targets for difficulty tiers. `npm run calibrate` tunes each character's scatter to its target with the real physics; the last run (2,000 shoes each, no pressure) measured 7.0%, 23.9%, 34.4% and 50.7%. Pressure then moves them: Mae never changes, Uncle Dale tightens, the Professor widens a lot.
 
 ## Multiplayer
 

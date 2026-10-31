@@ -7,11 +7,14 @@ import { SwingInput, type SwingResult } from './input/swing';
 import { Stage } from './render/stage';
 import { boardPlacement, type BoardState } from './render/chalkboard';
 import { closeCallKind, closeCallLabel } from './render/closeCall';
+import { npcSwing, seasonFactor, stress } from './ai/arm';
+import { lineFor, type LineEvent } from './ai/lines';
+import type { Character } from './ai/roster';
 import { Practice, SET_SIZE, describeResult } from './game/practice';
 import { matchDusk, practiceDusk } from './game/duskProgress';
 import { MODE_INFO, MatchFlow, type MatchSetup, type SavedMatch } from './game/matchFlow';
 import { ThrowSession, type Controller, type ShoeResult } from './game/session';
-import { applyLaunch, buildTuningPanel, loadSettings, saveSettings } from './game/tuning';
+import { applyLaunch, buildTuningPanel, loadSettings, readout, saveSettings } from './game/tuning';
 import { clang, thud, unlockAudio } from './audio/sfx';
 import { confirmLeave, hideOverlay, playerColor, showGameOver, showHandoff, showInning, showMenu, showSetup, showToss } from './ui/overlay';
 
@@ -19,6 +22,8 @@ const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as
 
 const SAVE_KEY = 'dusk.match.v1';
 const PLAYERS_KEY = 'dusk.setup.v1';
+/** Games played against the Rookie, who improves over a season. */
+const ROOKIE_KEY = 'dusk.rookie.games';
 
 function readJson<T>(key: string): T | null {
   try {
@@ -106,6 +111,9 @@ async function start() {
 
   const goMenu = () => {
     mode = 'menu';
+    window.clearTimeout(npcTimer);
+    npcKey = '';
+    sayEl.className = 'hidden';
     endCloseCall(false);
     hint.classList.add('hidden');
     toast.classList.add('hidden');
@@ -153,7 +161,81 @@ async function start() {
     stage.dusk.setTarget(duskTarget(), true);
     updateBoards(false);
     if (flow.state.innings.length === 0) hint.classList.remove('hidden');
+    const npc = flow.character(1);
+    if (npc && flow.state.innings.length === 0) window.setTimeout(() => say(npc, 'greet'), 700);
   };
+
+  // ── Computer opponents ──────────────────────────────────────────────
+
+  const sayEl = $('#say');
+  let sayTimer = 0;
+  let lastLine: string | null = null;
+  /** Show a character's line for this moment (they may keep quiet). */
+  function say(c: Character, event: LineEvent) {
+    const line = lineFor(c.id, event, Math.random, lastLine);
+    if (!line) return;
+    lastLine = line;
+    sayEl.replaceChildren(Object.assign(document.createElement('b'), { textContent: c.name }), `“${line}”`);
+    sayEl.className = '';
+    window.clearTimeout(sayTimer);
+    sayTimer = window.setTimeout(() => (sayEl.className = 'hidden'), 4200);
+  }
+
+  let npcKey = '';
+  let npcTimer = 0;
+  /** When it's a character's turn, take it for them after a human-sized pause. */
+  function driveNpc() {
+    if (mode !== 'match' || !flow) return;
+    const f = flow;
+    const p = f.pitcher;
+    const c = f.character(p);
+    const key = `${f.phase}:${f.inningNumber}:${f.shoeIndex}`;
+    if (!c || key === npcKey) return;
+    npcKey = key;
+    window.clearTimeout(npcTimer);
+    if (f.phase === 'handoff') {
+      npcTimer = window.setTimeout(() => f.acceptHandoff(), 1100);
+    } else if (f.phase === 'aim') {
+      const situation = f.situation(p);
+      if (stress(situation) > 0.6 && Math.random() < 0.5) say(c, 'pressure');
+      const season = c.id === 'rookie' ? seasonFactor(readJson<number>(ROOKIE_KEY) ?? 0) : 1;
+      npcTimer = window.setTimeout(() => {
+        if (flow !== f || f.phase !== 'aim') return;
+        f.pitch(npcSwing(c, f.situation(p), Math.random, season));
+        hint.classList.add('hidden');
+        toast.classList.add('hidden');
+      }, 1500);
+    }
+  }
+
+  /** The opponent reacts to a shoe, theirs or yours. */
+  function reactToShoe(r: ShoeResult) {
+    if (mode !== 'match' || !flow) return;
+    const shooter = r.shoe.owner;
+    const mine = flow.character(shooter);
+    const theirs = flow.character(shooter === 0 ? 1 : 0);
+    const close = r.inCount && r.measure.distance <= 2 * IN;
+    if (mine) {
+      const e: LineEvent | null = r.foul ? 'foul' : r.measure.ringer ? 'ringer' : close ? 'close' : !r.inCount ? 'miss' : null;
+      if (e && Math.random() < 0.75) say(mine, e);
+    } else if (theirs) {
+      if (r.measure.ringer && !r.foul) say(theirs, 'oppRinger');
+      else if ((r.foul || !r.inCount) && Math.random() < 0.35) say(theirs, 'oppMiss');
+    }
+  }
+
+  /** After the inning: a double, or ringers cancelling, is worth a word. */
+  function reactToInning(f: MatchFlow) {
+    const inn = f.lastInning;
+    if (!inn) return;
+    for (const p of [0, 1] as Player[]) {
+      const c = f.character(p);
+      if (!c) continue;
+      const [r0, r1] = inn.score.ringers;
+      if (inn.score.points[p] === 6) say(c, 'double');
+      else if (r0 > 0 && r0 === r1) say(c, 'cancel');
+    }
+  }
 
   // ── Dusk and chalkboards ────────────────────────────────────────────
 
@@ -204,7 +286,10 @@ async function start() {
   const frameBoard = (stake: Stake) => {
     const { position, facing } = boardPlacement(stake);
     const normal = new THREE.Vector3(-Math.sin(0.35), 0, facing * Math.cos(0.35));
-    rig.frame(position.clone().addScaledVector(normal, 1.7).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, 0.22, 0)), 2);
+    // Far enough back that the whole board fits a phone held upright; aimed a little
+    // high so the board sits below the inning card.
+    const lift = canvas.clientWidth > canvas.clientHeight ? 0.36 : 0.14; // wide screens: card overlaps more
+    rig.frame(position.clone().addScaledVector(normal, 3).add(new THREE.Vector3(0, 0.05, 0)), position.clone().add(new THREE.Vector3(0, lift, 0)), 2.5);
   };
 
   // ── HUD ─────────────────────────────────────────────────────────────
@@ -309,16 +394,25 @@ async function start() {
     shownPhase = key;
     const f = flow;
     if (f.phase === 'handoff') showHandoff(f, !prev.startsWith('handoff') && f.shoeIndex === 0, () => f.acceptHandoff());
-    else if (f.phase === 'inning') showInning(f, () => f.nextInning());
-    else if (f.phase === 'over') {
+    else if (f.phase === 'inning') {
+      showInning(f, () => f.nextInning());
+      reactToInning(f);
+    } else if (f.phase === 'over') {
       writeJson(SAVE_KEY, null);
+      for (const p of [0, 1] as Player[]) {
+        const c = f.character(p);
+        if (!c) continue;
+        say(c, f.state.winner === p ? 'win' : 'lose');
+        if (c.id === 'rookie') writeJson(ROOKIE_KEY, (readJson<number>(ROOKIE_KEY) ?? 0) + 1);
+      }
       showGameOver(f, { menu: goMenu, rematch: () => toss(f.setup) });
     } else hideOverlay();
   };
 
   function refresh() {
     const p = ctl.phase;
-    swing.enabled = mode !== 'menu' && p === 'aim';
+    const npcTurn = !!(mode === 'match' && flow?.character(flow.pitcher));
+    swing.enabled = mode !== 'menu' && p === 'aim' && !npcTurn;
     rig.setAim(ctl.stance, ctl.target, ctl.line);
     if (!stage.closeCall.active) {
       if (p === 'inning' && flow?.lastInning) frameBoard(flow.lastInning.number % 2 === 1 ? NEAR_STAKE : FAR_STAKE);
@@ -327,11 +421,13 @@ async function start() {
     stage.dusk.setTarget(duskTarget());
     updateBoards(true);
     ghost.update(ctl.grip, ctl.stance, ctl.line, ctl.target);
-    ghost.line.visible = settings.aids && (p === 'aim' || p === 'handoff') && mode !== 'menu';
+    ghost.line.visible = settings.aids && (p === 'aim' || p === 'handoff') && mode !== 'menu' && !npcTurn;
     refreshControls();
+    $('#controls').classList.toggle('npc', npcTurn);
     refreshTop();
     refreshSet();
     refreshOverlay();
+    driveNpc();
   }
 
   const showToast = (r: ShoeResult) => {
@@ -350,6 +446,7 @@ async function start() {
   let pendingToast: ShoeResult | null = null;
   function onResult(r: ShoeResult) {
     markLanding(r.shoe);
+    reactToShoe(r);
     resultAt = performance.now();
     // Close calls get measured on camera before the result card.
     const kind = closeCallKind(r.measure, r.foul);
@@ -460,6 +557,8 @@ async function start() {
   });
   const fpsEl = $('#fps');
   fpsEl.hidden = !settings.look.showFps;
+  // Keep the frame-rate readout just above the controls, whatever height they wrap to.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--controls-h', `${$('#controls').offsetHeight}px`)).observe($('#controls'));
   stage.onQualityChange = (q) => console.info(`Quality stepped down to ${q.tier} to keep the frame rate up.`);
   if (!new URLSearchParams(location.search).has('tune')) gui.hide();
   $('#tune').addEventListener('click', () => (gui._hidden ? gui.show() : gui.hide()));
@@ -491,7 +590,8 @@ async function start() {
 
     rig.update(dt, ctl.phase === 'flight' ? flying : null);
     stage.render(dt, mode !== 'menu' && ctl.phase === 'aim' ? ctl.target : null);
-    if (settings.look.showFps) fpsEl.textContent = `${Math.round(stage.fps)} fps · ${stage.tier}`;
+    readout.frameRate = `${Math.round(stage.fps)} fps · ${stage.tier}`;
+    if (settings.look.showFps) fpsEl.textContent = readout.frameRate;
     requestAnimationFrame(frame);
   };
 

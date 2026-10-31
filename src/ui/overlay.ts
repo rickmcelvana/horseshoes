@@ -3,7 +3,8 @@
 import { IN, type Player } from '../rules';
 import type { FoulLine } from '../physics/throw';
 import { SHOE_COLORS } from '../render/shoeMesh';
-import { MODE_INFO, type MatchFlow, type MatchSetup, type ModeKey, type SavedMatch } from '../game/matchFlow';
+import { MODE_INFO, npcPlayer, type MatchFlow, type MatchSetup, type ModeKey, type SavedMatch } from '../game/matchFlow';
+import { CHARACTER_IDS, ROSTER, type CharacterId } from '../ai/roster';
 import type { ShoeResult } from '../game/session';
 
 const root = () => document.querySelector('#overlay') as HTMLElement;
@@ -65,6 +66,8 @@ export function showMenu(opts: { saved: SavedMatch | null; practice: () => void;
 
 export function showSetup(initial: MatchSetup, opts: { start: (s: MatchSetup) => void; back: () => void }) {
   const setup: MatchSetup = { mode: initial.mode, players: [{ ...initial.players[0] }, { ...initial.players[1] }] };
+  // Remember the friend's name if a character is picked and then un-picked.
+  let friend = setup.players[1].npc ? { name: 'Player 2', line: 'full' as FoulLine } : { ...setup.players[1] };
 
   const playerRow = (p: Player) => {
     const input = h('input', { type: 'text', value: setup.players[p].name, maxLength: 16, ariaLabel: `Player ${p + 1} name` });
@@ -85,6 +88,31 @@ export function showSetup(initial: MatchSetup, opts: { start: (s: MatchSetup) =>
     return h('div', { class: 'player', style: `--c:${playerColor(p)}` }, h('span', { class: 'dot' }), input, lines);
   };
 
+  const rows = h('div', { class: 'players' }, playerRow(0), playerRow(1));
+  const friendRow = rows.lastElementChild as HTMLElement;
+  const opponents = h('div', { class: 'modes', role: 'radiogroup', ariaLabel: 'Opponent' });
+  const drawOpponents = () => {
+    const pick = setup.players[1].npc ?? 'friend';
+    opponents.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.opponent === pick)));
+    friendRow.hidden = pick !== 'friend';
+  };
+  const choices: [CharacterId | 'friend', string, string][] = [
+    ['friend', 'A friend', 'Hot-seat: pass the phone or share the computer.'],
+    ...CHARACTER_IDS.map((id): [CharacterId, string, string] => [id, ROSTER[id].name, `${ROSTER[id].blurb} About ${ROSTER[id].targetRingerPct}% ringers.`]),
+  ];
+  for (const [key, label, blurb] of choices) {
+    const b = h('button', { class: 'mode' }, h('strong', { textContent: label }), h('span', { textContent: blurb }));
+    b.dataset.opponent = key;
+    b.setAttribute('role', 'radio');
+    b.addEventListener('click', () => {
+      if (!setup.players[1].npc) friend = { ...setup.players[1] };
+      setup.players[1] = key === 'friend' ? { ...friend } : npcPlayer(key);
+      drawOpponents();
+    });
+    opponents.append(b);
+  }
+  drawOpponents();
+
   const modes = h('div', { class: 'modes', role: 'radiogroup', ariaLabel: 'Game' });
   const drawModes = () => modes.querySelectorAll('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === setup.mode)));
   for (const [key, info] of Object.entries(MODE_INFO) as [ModeKey, (typeof MODE_INFO)[ModeKey]][]) {
@@ -101,8 +129,11 @@ export function showSetup(initial: MatchSetup, opts: { start: (s: MatchSetup) =>
       'div',
       { class: 'card setup' },
       h('h2', { textContent: 'New match' }),
-      h('div', { class: 'players' }, playerRow(0), playerRow(1)),
+      rows,
       h('p', { class: 'fine', textContent: '30 ft is the short-distance line for juniors, elders and anyone who wants it.' }),
+      h('div', { class: 'eyebrow section', textContent: 'Opponent' }),
+      opponents,
+      h('div', { class: 'eyebrow section', textContent: 'Game' }),
       modes,
       h('div', { class: 'actions' }, button('Back', opts.back), button('Toss for first pitch', () => opts.start(setup), true)),
     ),
@@ -130,11 +161,17 @@ export function showToss(setup: MatchSetup, winner: Player, choose: (first: Play
 
 export function showHandoff(flow: MatchFlow, newEnd: boolean, ready: () => void) {
   const p = flow.pitcher;
+  const npc = flow.character(p);
   const end = flow.target.leanDir.z > 0 ? 'the near stake' : 'the far stake';
-  const lines: (Node | string)[] = [h('div', { class: 'eyebrow', textContent: `Inning ${flow.inningNumber} · pitching at ${end}` }), h('h2', {}, name(p, flow.name(p)), '’s turn')];
+  const lines: (Node | string)[] = [
+    h('div', { class: 'eyebrow', textContent: `Inning ${flow.inningNumber} · pitching at ${end}` }),
+    h('h2', {}, name(p, flow.name(p)), npc ? ' is up' : '’s turn'),
+  ];
   if (newEnd && flow.inningNumber > 1) lines.push(h('p', { class: 'sub', textContent: 'Shoes picked up. Walk to the other end.' }));
-  lines.push(h('p', { class: 'sub', textContent: 'Pick a grip and platform below, then pitch both shoes.' }));
-  lines.push(h('div', { class: 'actions' }, button('Ready', ready, true)));
+  if (!npc) {
+    lines.push(h('p', { class: 'sub', textContent: 'Pick a grip and platform below, then pitch both shoes.' }));
+    lines.push(h('div', { class: 'actions' }, button('Ready', ready, true)));
+  }
   show(h('div', { class: 'card handoff' }, ...lines), false);
 }
 

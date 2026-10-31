@@ -10,6 +10,9 @@ import type { TierSetting } from '../render/quality';
 
 const KEY = 'dusk.tuning.v1';
 
+/** Live numbers shown read-only in the panel. */
+export const readout = { frameRate: '–' };
+
 export interface Settings {
   sim: SimParams;
   swing: SwingTuning;
@@ -73,6 +76,7 @@ export function buildTuningPanel(s: Settings, hooks: { rebuild: () => void; chan
   look.add(s.look, 'autoTime').name('Dusk follows the score').onChange(onLook);
   look.add(s.look, 'timeOfDay', 0, 1, 0.01).name('Time of day').onChange(onLook);
   look.add(s.look, 'showFps').name('Show frame rate').onChange(onLook);
+  look.add(readout, 'frameRate').name('Frame rate').listen().disable();
 
   const clay = gui.addFolder('Clay');
   const preset = { preset: 'wet' as keyof typeof CLAY_PRESETS };
